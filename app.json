@@ -1,24 +1,43 @@
 {
   "expo": {
-    "name": "Can you build for me a mortgage estimato",
-    "slug": "can-you-build-for-me-a-mortgag",
+    "name": "Loan Navigator",
+    "slug": "loan-navigator",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "backgroundColor": "#000000"
-    },
+
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 300,
+          "resizeMode": "contain",
+          "backgroundColor": "#061735",
+          "dark": {
+            "image": "./assets/splash.png",
+            "backgroundColor": "#061735"
+          }
+        }
+      ]
+    ],
+
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.wron.app0y11op2ify"
+      "bundleIdentifier": "com.wron.app0y11op2ify",
+      "buildNumber": "1"
     },
+
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#061735"
       },
-      "package": "com.wron.app0y11op2ify"
+      "package": "com.wron.app0y11op2ify",
+      "versionCode": 1
     },
+
     "extra": {
       "eas": {
         "projectId": "a085b6cb-d13e-40a9-ae1b-4e4ebe35db1f"
