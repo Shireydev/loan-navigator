@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Can you build for me a mortgage estimato",
+    "slug": "can-you-build-for-me-a-mortgag",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.wron.app0y11op2ify"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#000000"
+      },
+      "package": "com.wron.app0y11op2ify"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a085b6cb-d13e-40a9-ae1b-4e4ebe35db1f"
+      }
+    }
+  }
+}
