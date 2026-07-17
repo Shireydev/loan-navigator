@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Privacy policy and support information for the Loan Navigator mobile app."
+  />
+  <title>Loan Navigator | Privacy & Support</title>
+
+  <style>
+    :root {
+      --background: #071426;
+      --surface: #0d2038;
+      --surface-light: #122b49;
+      --primary: #4da3ff;
+      --primary-light: #83c1ff;
+      --text: #f5f9ff;
+      --muted: #afbdd0;
+      --border: rgba(255, 255, 255, 0.1);
+      --success: #54d39a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, Arial, sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(77, 163, 255, 0.18), transparent 34%),
+        linear-gradient(180deg, #071426 0%, #09192c 100%);
+      color: var(--text);
+      line-height: 1.65;
+    }
+
+    a {
+      color: var(--primary-light);
+    }
+
+    .container {
+      width: min(920px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 76px 0 56px;
+      text-align: center;
+    }
+
+    .logo {
+      width: 86px;
+      height: 86px;
+      margin: 0 auto 22px;
+      border: 2px solid rgba(255, 255, 255, 0.85);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      position: relative;
+      background: rgba(255, 255, 255, 0.04);
+      box-shadow: 0 0 40px rgba(77, 163, 255, 0.16);
+    }
+
+    .logo::before {
+      content: "⌂";
+      font-size: 42px;
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .logo::after {
+      content: "";
+      position: absolute;
+      width: 8px;
+      height: 32px;
+      border-radius: 999px;
+      background: linear-gradient(var(--primary-light), var(--primary));
+      bottom: 6px;
+      transform: rotate(18deg);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2.5rem, 8vw, 4.8rem);
+      letter-spacing: -0.05em;
+      line-height: 1;
+    }
+
+    .brand-accent {
+      display: block;
+      margin-top: 12px;
+      color: var(--primary);
+      font-size: clamp(1.2rem, 4vw, 1.8rem);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .tagline {
+      max-width: 650px;
+      margin: 28px auto 0;
+      font-size: 1.16rem;
+      color: var(--muted);
+    }
+
+    .badges {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .badge {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      color: #dbe8f8;
+      font-size: 0.92rem;
+    }
+
+    main {
+      padding-bottom: 70px;
+    }
+
+    .card {
+      background: linear-gradient(
+        145deg,
+        rgba(18, 43, 73, 0.95),
+        rgba(10, 28, 49, 0.95)
+      );
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: clamp(24px, 5vw, 42px);
+      margin-bottom: 24px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+    }
+
+    h2 {
+      margin-top: 0;
+      margin-bottom: 18px;
+      font-size: 1.75rem;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin-top: 30px;
+      margin-bottom: 10px;
+      color: #eaf3ff;
+    }
+
+    p,
+    li {
+      color: var(--muted);
+    }
+
+    ul {
+      padding-left: 22px;
+    }
+
+    .highlight {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .privacy-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 18px;
+      border-radius: 14px;
+      background: rgba(84, 211, 154, 0.08);
+      border: 1px solid rgba(84, 211, 154, 0.22);
+      margin: 24px 0;
+    }
+
+    .privacy-note strong {
+      color: var(--success);
+    }
+
+    .contact-button {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 12px 18px;
+      border-radius: 12px;
+      background: var(--primary);
+      color: #04111f;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    footer {
+      text-align: center;
+      color: #8190a4;
+      padding: 16px 0 50px;
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 600px) {
+      header {
+        padding-top: 54px;
+      }
+
+      .container {
+        width: min(100% - 24px, 920px);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="container">
+    <div class="logo" aria-hidden="true"></div>
+
+    <h1>
+      Loan
+      <span class="brand-accent">Navigator</span>
+    </h1>
+
+    <p class="tagline">
+      Take the guesswork out of borrowing with practical tools for mortgages,
+      refinancing, auto loans, and faster payoff planning.
+    </p>
+
+    <div class="badges">
+      <span class="badge">No account required</span>
+      <span class="badge">No advertising</span>
+      <span class="badge">Financial estimates made simple</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>About Loan Navigator</h2>
+
+      <p>
+        Loan Navigator is a loan decision toolkit designed to help users
+        estimate payments, compare refinancing options, explore extra-payment
+        strategies, and understand long-term borrowing costs.
+      </p>
+
+      <p>
+        Calculations may include mortgage principal and interest, estimated
+        property taxes, insurance, private mortgage insurance, closing costs,
+        auto loan payments, amortization schedules, and potential payoff
+        savings.
+      </p>
+
+      <div class="privacy-note">
+        <div>
+          <strong>Your privacy matters.</strong><br />
+          Loan Navigator does not require an account and does not sell personal
+          information.
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="privacy-policy">
+      <h2>Privacy Policy</h2>
+
+      <p><strong>Last updated:</strong> July 17, 2026</p>
+
+      <h3>Overview</h3>
+
+      <p>
+        Loan Navigator is committed to protecting your privacy. This Privacy
+        Policy explains what information the app processes, how it is used, and
+        your choices regarding that information.
+      </p>
+
+      <h3>Information We Collect</h3>
+
+      <p>
+        Loan Navigator is designed to perform loan calculations directly on
+        your device.
+      </p>
+
+      <p>
+        The app does not require you to create an account and does not collect
+        personal information such as your name, email address, phone number, or
+        financial account information.
+      </p>
+
+      <p>
+        You may choose to enter a ZIP code to receive location-based estimates,
+        such as property tax, insurance, and closing-cost estimates. A ZIP code
+        generally represents a geographic area and is not intended to identify
+        you personally.
+      </p>
+
+      <h3>How Information Is Used</h3>
+
+      <p>
+        Information entered into Loan Navigator is used solely to perform the
+        calculations and estimates you request, including:
+      </p>
+
+      <ul>
+        <li>Mortgage payment estimates</li>
+        <li>Refinance analysis</li>
+        <li>Loan payoff acceleration</li>
+        <li>Auto loan calculations</li>
+        <li>Amortization schedules</li>
+        <li>Location-based cost estimates</li>
+      </ul>
+
+      <p>
+        Loan amounts, interest rates, property values, payment details, and
+        other financial inputs are processed locally on your device.
+      </p>
+
+      <h3>Third-Party Services</h3>
+
+      <p>
+        When you use the ZIP code lookup feature, Loan Navigator sends the ZIP
+        code you enter to the Zippopotam.us service to identify the associated
+        city and state.
+      </p>
+
+      <p>
+        Only the ZIP code is sent for this lookup. Loan amounts, interest rates,
+        property values, payment details, and other financial information
+        entered into the app are not sent to Zippopotam.us.
+      </p>
+
+      <p>
+        Location information returned by the service is combined with tax,
+        insurance, and closing-cost estimate data stored within the app.
+      </p>
+
+      <h3>Data Sharing</h3>
+
+      <p>
+        Loan Navigator does not sell or rent personal information and does not
+        share personal information with third parties for advertising or
+        marketing purposes.
+      </p>
+
+      <h3>Data Retention</h3>
+
+      <p>
+        Loan Navigator does not maintain user accounts or a remote database of
+        users' loan calculations. Information stored locally by the app remains
+        on the device unless it is removed by the user, cleared through device
+        settings, or deleted when the app is uninstalled.
+      </p>
+
+      <h3>Data Security</h3>
+
+      <p>
+        Reasonable measures are used to protect information processed by the
+        application. However, no method of electronic transmission or storage
+        can be guaranteed to be completely secure.
+      </p>
+
+      <h3>Children's Privacy</h3>
+
+      <p>
+        Loan Navigator is not directed toward children under the age of 13 and
+        does not knowingly collect personal information from children.
+      </p>
+
+      <h3>Financial Disclaimer</h3>
+
+      <p>
+        Loan Navigator provides estimates for educational and informational
+        purposes only. Results are not financial advice, lending offers, credit
+        decisions, or guarantees of actual rates, taxes, insurance premiums,
+        fees, approval, or savings.
+      </p>
+
+      <p>
+        Actual costs and loan terms may vary. Users should verify estimates with
+        qualified lenders, financial professionals, insurers, tax authorities,
+        or other appropriate providers before making financial decisions.
+      </p>
+
+      <h3>Changes to This Privacy Policy</h3>
+
+      <p>
+        This Privacy Policy may be updated from time to time. Changes will be
+        posted on this page with a revised update date.
+      </p>
+
+      <h3>Contact</h3>
+
+      <p>
+        Questions about Loan Navigator or this Privacy Policy may be sent to:
+      </p>
+
+      <a class="contact-button" href="mailto:loannavigation@gmail.com">
+        loannavigation@gmail.com
+      </a>
+    </section>
+  </main>
+
+  <footer class="container">
+    © 2026 Loan Navigator. All rights reserved.
+  </footer>
+</body>
+</html>
