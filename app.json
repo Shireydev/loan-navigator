@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Loan Navigator",
-    "slug": "loan-navigator",
+    "slug": "can-you-build-for-me-a-mortgag",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -26,7 +26,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.wron.app0y11op2ify",
-      "buildNumber": "1"
     },
 
     "android": {
@@ -34,8 +33,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#061735"
       },
-      "package": "com.wron.app0y11op2ify",
-      "versionCode": 1
+      "package": "com.wron.app0y11op2ify"
     },
 
     "extra": {
