@@ -156,13 +156,24 @@ export default function SavedScreen() {
     const result = item.results || {};
 
     return (
-      <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => open(item)}>
+      <TouchableOpacity
+        style={styles.card}
+        activeOpacity={0.85}
+        onPress={() => open(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${displayName}`}
+      >
         <View style={styles.cardTop}>
           <View style={[styles.badge, { backgroundColor: color + '22' }]}>
             <Ionicons name={meta.icon} size={16} color={color} />
             <Text style={[styles.badgeText, { color }]}>{meta.label}</Text>
           </View>
-          <TouchableOpacity onPress={() => remove(item.id)} hitSlop={10}>
+          <TouchableOpacity
+            onPress={() => remove(item.id)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${displayName}`}
+          >
             <Ionicons name="trash-outline" size={18} color={COLORS.textMuted} />
           </TouchableOpacity>
         </View>
@@ -350,8 +361,7 @@ export default function SavedScreen() {
         <View style={styles.cardFooter}>
           <Text style={styles.date}>Saved {formatDate(item.createdAt)}</Text>
           <View style={styles.openHint}>
-            <Text style={styles.openHintText}>Open</Text>
-            <Ionicons name="chevron-forward" size={14} color={COLORS.accent} />
+            <Ionicons name="chevron-forward" size={18} color={COLORS.accent} />
           </View>
         </View>
       </TouchableOpacity>
@@ -360,7 +370,14 @@ export default function SavedScreen() {
 
   return (
     <View style={styles.container}>
-      <GradientHeader title="Saved Estimates" subtitle="Your comparisons" icon="bookmark" />
+      <GradientHeader
+        title="Saved Plans"
+        subtitle="Review and compare your scenarios"
+        icon="home-outline"
+        variant="financial"
+        onIconPress={() => navigation.navigate('Home')}
+        iconAccessibilityLabel="Return to home"
+      />
 
       {loading ? (
         <View style={styles.center}>
@@ -375,6 +392,14 @@ export default function SavedScreen() {
           <Text style={styles.emptySub}>
             Save mortgage and auto loan estimates, payoffs and refinances to compare them here.
           </Text>
+          <TouchableOpacity
+            style={styles.emptyBtn}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('Home')}
+          >
+            <Text style={styles.emptyBtnText}>Explore Calculators</Text>
+            <Ionicons name="arrow-forward" size={17} color="#fff" />
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -383,10 +408,18 @@ export default function SavedScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           ListHeaderComponent={
-            <TouchableOpacity style={styles.clearBtn} onPress={clearAll} activeOpacity={0.8}>
-              <Ionicons name="trash-outline" size={15} color={COLORS.red} />
-              <Text style={styles.clearText}>Clear all ({items.length})</Text>
-            </TouchableOpacity>
+            <View style={styles.listHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>Your Saved Scenarios</Text>
+                <Text style={styles.itemCount}>
+                  {items.length} {items.length === 1 ? 'scenario' : 'scenarios'}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.clearBtn} onPress={clearAll} activeOpacity={0.8}>
+                <Ionicons name="trash-outline" size={15} color={COLORS.red} />
+                <Text style={styles.clearText}>Clear all</Text>
+              </TouchableOpacity>
+            </View>
           }
         />
       )}
@@ -423,14 +456,36 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 20,
   },
+  emptyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.accent,
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    height: 48,
+    marginTop: 20,
+  },
+  emptyBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   list: { padding: 20, paddingBottom: 40 },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  sectionTitle: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '800' },
+  itemCount: { color: COLORS.textMuted, fontSize: 12, fontWeight: '600', marginTop: 3 },
   clearBtn: {
     flexDirection: 'row',
     gap: 6,
-    alignSelf: 'flex-end',
     alignItems: 'center',
-    marginBottom: 14,
-    paddingVertical: 4,
+    backgroundColor: COLORS.red + '12',
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: COLORS.red + '30',
+    paddingHorizontal: 11,
+    paddingVertical: 8,
   },
   clearText: { color: COLORS.red, fontSize: 13, fontWeight: '700' },
   card: {
@@ -464,8 +519,8 @@ const styles = StyleSheet.create({
   savedName: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '800', marginBottom: 8 },
   mainValue: { color: COLORS.textPrimary, fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
   mainUnit: { fontSize: 15, fontWeight: '600', color: COLORS.textMuted },
-  metaRow: { flexDirection: 'row', gap: 20, marginTop: 12 },
-  meta: {},
+  metaRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  meta: { flex: 1 },
   metaLabel: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600' },
   metaValue: { fontSize: 14, fontWeight: '700', marginTop: 2 },
   verdictPill: {
@@ -484,8 +539,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 14,
+    paddingTop: 13,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
   },
   date: { color: COLORS.textMuted, fontSize: 12, fontWeight: '500' },
   openHint: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  openHintText: { color: COLORS.accent, fontSize: 13, fontWeight: '700' },
 });

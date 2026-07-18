@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -43,16 +44,7 @@ const FREQS = [
 // A monthly-extra row: label + amount input + frequency toggle. The math for
 // the monthly-equivalent is intentionally NOT shown (per requirements) — we
 // simply convert behind the scenes.
-function ExtraField({
-  label,
-  value,
-  onChangeValue,
-  freq,
-  onChangeFreq,
-  accentColor,
-  num,
-  recommended,
-}) {
+function ExtraField({ label, value, onChangeValue, freq, onChangeFreq, accentColor, recommended }) {
   return (
     <View style={styles.extraWrap}>
       <InputField
@@ -106,6 +98,16 @@ function ExtraField({
   );
 }
 
+function CostSummary({ label, value, color }) {
+  return (
+    <View style={styles.costSummaryItem}>
+      <View style={[styles.costSummaryDot, { backgroundColor: color }]} />
+      <Text style={styles.costSummaryLabel}>{label}</Text>
+      <Text style={[styles.costSummaryValue, { color }]}>{fmtMoney(value)}/mo</Text>
+    </View>
+  );
+}
+
 export default function EstimatorScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -121,6 +123,8 @@ export default function EstimatorScreen() {
   const [hoaFreq, setHoaFreq] = useState('monthly');
   const [includePmi, setIncludePmi] = useState(true);
   const [presetName, setPresetName] = useState('');
+  const [locationExpanded, setLocationExpanded] = useState(false);
+  const [costsExpanded, setCostsExpanded] = useState(false);
 
   // ZIP code lookup state
   const [zip, setZip] = useState('');
@@ -207,6 +211,7 @@ export default function EstimatorScreen() {
   const hoaMonthly = Number.isFinite(hoaN) ? hoaN / perOf(hoaFreq) : 0;
 
   const total = pi + taxMonthly + insuranceMonthly + pmi + hoaMonthly;
+  const otherMonthly = taxMonthly + insuranceMonthly + pmi + hoaMonthly;
 
   // ---- Approximate closing costs ----
   // Based on home price, down payment, loan term, and location (state rate).
@@ -282,6 +287,9 @@ export default function EstimatorScreen() {
 
   const calculate = async () => {
     if (validationError) {
+      if (/Property tax|Homeowners insurance|HOA/.test(validationError)) {
+        setCostsExpanded(true);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Check Your Inputs', validationError);
       return;
@@ -331,12 +339,24 @@ export default function EstimatorScreen() {
 
   return (
     <View style={styles.container}>
-      <GradientHeader title="Mortgage Estimator" subtitle="Find your monthly payment" icon="home" />
+      <GradientHeader
+        title="Mortgage Estimate"
+        subtitle="Build a clear monthly payment plan"
+        icon="home-outline"
+        variant="financial"
+        onIconPress={() => navigation.getParent()?.navigate('Home')}
+        iconAccessibilityLabel="Return to home"
+      />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={styles.formScroll}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {presetName ? (
             <View style={styles.restoreBanner}>
               <Ionicons name="bookmark" size={16} color={COLORS.accent} />
@@ -347,206 +367,281 @@ export default function EstimatorScreen() {
           <ValidationBanner message={validationError} />
 
           <View style={styles.previewCard}>
-            <Text style={styles.previewLabel}>Estimated Monthly Payment</Text>
-            <Text style={styles.previewValue}>{fmtMoney(total)}</Text>
-            <View style={styles.previewRow}>
-              <Text style={styles.previewSub}>Loan: {fmtMoney(loanAmount)}</Text>
-              <Text style={styles.previewSub}>Down: {downPct.toFixed(0)}%</Text>
+            <View style={styles.previewAccent} />
+            <View style={styles.previewHead}>
+              <View style={styles.liveDot} />
+              <Text style={styles.previewLabel}>LIVE MONTHLY ESTIMATE</Text>
+              <Text style={styles.previewStatus}>Updates as you edit</Text>
+            </View>
+            <View style={styles.previewAmountRow}>
+              <Text style={styles.previewValue}>{fmtMoney(total)}</Text>
+              <Text style={styles.previewUnit}>/ month</Text>
+            </View>
+            <View style={styles.previewDivider} />
+            <View style={styles.previewBreakdown}>
+              <View style={styles.previewMetric}>
+                <Text style={styles.previewMetricLabel}>Principal & interest</Text>
+                <Text style={styles.previewMetricValue}>{fmtMoney(pi)}</Text>
+              </View>
+              <View style={styles.previewMetricDivider} />
+              <View style={styles.previewMetric}>
+                <Text style={styles.previewMetricLabel}>Taxes, insurance & other</Text>
+                <Text style={styles.previewMetricValue}>{fmtMoney(otherMonthly)}</Text>
+              </View>
+            </View>
+            <View style={styles.previewDisclosure}>
+              <Ionicons name="information-circle-outline" size={14} color={COLORS.textMuted} />
+              <Text style={styles.previewDisclosureText}>
+                Planning estimate based on your inputs — not a lender quote.
+              </Text>
             </View>
           </View>
 
-          <Text style={styles.sectionTitle}>Home Details</Text>
-          <InputField label="Home Price" value={price} onChangeText={setPrice} prefix="$" />
-          <InputField label="Down Payment" value={down} onChangeText={setDown} prefix="$" />
+          <Text style={styles.sectionTitle}>Loan Basics</Text>
+          <View style={styles.basicsCard}>
+            <InputField label="Home Price" value={price} onChangeText={setPrice} prefix="$" />
+            <InputField label="Down Payment" value={down} onChangeText={setDown} prefix="$" />
+            <InputField
+              label="Interest Rate"
+              value={rate}
+              onChangeText={setRate}
+              suffix="%"
+              accentColor={COLORS.purple}
+            />
 
-          <Text style={styles.sectionTitle}>Loan Details</Text>
-          <InputField
-            label="Interest Rate"
-            value={rate}
-            onChangeText={setRate}
-            suffix="%"
-            accentColor={COLORS.purple}
-          />
-
-          <Text style={styles.label}>Loan Term</Text>
-          <View style={styles.termRow}>
-            {TERMS.map((t) => (
-              <TouchableOpacity
-                key={t}
-                activeOpacity={0.8}
-                style={[styles.termBtn, term === t && styles.termBtnActive]}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setTerm(t);
-                }}
-              >
-                <Text style={[styles.termText, term === t && styles.termTextActive]}>{t} yr</Text>
-              </TouchableOpacity>
-            ))}
+            <Text style={styles.label}>Loan Term</Text>
+            <View style={styles.termRow}>
+              {TERMS.map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  activeOpacity={0.8}
+                  style={[styles.termBtn, term === t && styles.termBtnActive]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setTerm(t);
+                  }}
+                >
+                  <Text style={[styles.termText, term === t && styles.termTextActive]}>{t} yr</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
-          {/* ---------------- OPTIONAL: ZIP CODE STEP ---------------- */}
-          <View style={styles.zipHeadRow}>
-            <Text style={styles.sectionTitle}>
-              Location <Text style={styles.optional}>(optional)</Text>
-            </Text>
-          </View>
+          <Text style={styles.sectionTitle}>Improve Accuracy</Text>
           <View style={styles.zipCard}>
-            <View style={styles.zipHead}>
+            <TouchableOpacity
+              style={styles.accordionHead}
+              activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: locationExpanded }}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setLocationExpanded((current) => !current);
+              }}
+            >
               <View style={[styles.zipIcon, { backgroundColor: COLORS.teal + '22' }]}>
                 <Ionicons name="location" size={18} color={COLORS.teal} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.zipTitle}>Estimate taxes, insurance & closing by ZIP</Text>
+                <Text style={styles.zipTitle}>
+                  {zipInfo ? 'Location estimates ready' : 'Use ZIP for local estimates'}
+                </Text>
                 <Text style={styles.zipSub}>
-                  Enter your ZIP and we'll estimate your property tax, home insurance and closing
-                  costs for your area.
+                  {zipInfo
+                    ? `${zipInfo.city}, ${zipInfo.stateCode} · taxes, insurance and closing costs`
+                    : zip
+                      ? `ZIP ${zip} saved · tap to refresh local estimates.`
+                      : 'Estimate taxes, insurance and closing costs for your area.'}
                 </Text>
               </View>
-            </View>
+              <Ionicons
+                name={locationExpanded ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={COLORS.textMuted}
+              />
+            </TouchableOpacity>
 
-            <View style={styles.zipInputRow}>
-              <View style={styles.zipInputWrap}>
-                <Ionicons
-                  name="pin"
-                  size={16}
-                  color={COLORS.textMuted}
-                  style={{ marginRight: 8 }}
-                />
-                <TextInput
-                  style={styles.zipInput}
-                  value={zip}
-                  onChangeText={(t) => setZip(t.replace(/[^0-9]/g, '').slice(0, 5))}
-                  placeholder="e.g. 78701"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="number-pad"
-                  maxLength={5}
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.zipBtn, zipLoading && { opacity: 0.7 }]}
-                activeOpacity={0.9}
-                onPress={lookupZip}
-                disabled={zipLoading}
-              >
-                {zipLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="search" size={16} color="#fff" />
-                    <Text style={styles.zipBtnText}>Look up</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {zipError ? (
-              <View style={styles.zipErrorRow}>
-                <Ionicons name="alert-circle" size={15} color={COLORS.red} />
-                <Text style={styles.zipErrorText}>{zipError}</Text>
-              </View>
-            ) : null}
-
-            {zipInfo ? (
-              <View style={styles.zipResult}>
-                <View style={styles.zipResultHead}>
-                  <Ionicons name="checkmark-circle" size={16} color={COLORS.green} />
-                  <Text style={styles.zipResultPlace}>
-                    {zipInfo.city}
-                    {zipInfo.countyDisplay ? ` · ${zipInfo.countyDisplay}` : ''}
-                    {`, ${zipInfo.stateCode}`}
-                  </Text>
+            {locationExpanded ? (
+              <View style={styles.accordionBody}>
+                <View style={styles.zipInputRow}>
+                  <View style={styles.zipInputWrap}>
+                    <Ionicons
+                      name="pin"
+                      size={16}
+                      color={COLORS.textMuted}
+                      style={{ marginRight: 8 }}
+                    />
+                    <TextInput
+                      style={styles.zipInput}
+                      value={zip}
+                      onChangeText={(t) => setZip(t.replace(/[^0-9]/g, '').slice(0, 5))}
+                      placeholder="e.g. 78701"
+                      placeholderTextColor={COLORS.textMuted}
+                      keyboardType="number-pad"
+                      maxLength={5}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.zipBtn, zipLoading && { opacity: 0.7 }]}
+                    activeOpacity={0.9}
+                    onPress={lookupZip}
+                    disabled={zipLoading}
+                  >
+                    {zipLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="search" size={16} color="#fff" />
+                        <Text style={styles.zipBtnText}>Look up</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
                 </View>
 
-                <View style={styles.zipRecRow}>
-                  <View style={styles.zipRecCol}>
-                    <Text style={styles.zipRecLabel}>Est. Property Tax</Text>
-                    <Text style={[styles.zipRecValue, { color: COLORS.amber }]}>
-                      {recTax != null ? `${fmtMoney(recTax)}/mo` : '—'}
-                    </Text>
-                    <Text style={styles.zipRecNote}>
-                      {zipInfo.effectiveRate.toFixed(2)}% of home value
-                    </Text>
+                {zipError ? (
+                  <View style={styles.zipErrorRow}>
+                    <Ionicons name="alert-circle" size={15} color={COLORS.red} />
+                    <Text style={styles.zipErrorText}>{zipError}</Text>
                   </View>
-                  <View style={styles.zipRecCol}>
-                    <Text style={styles.zipRecLabel}>Est. Home Insurance</Text>
-                    <Text style={[styles.zipRecValue, { color: COLORS.teal }]}>
-                      {recIns != null ? `${fmtMoney(recIns)}/mo` : '—'}
-                    </Text>
-                    <Text style={styles.zipRecNote}>{zipInfo.state} avg</Text>
-                  </View>
-                </View>
+                ) : null}
 
-                {/* Closing costs estimate derived from ZIP + price + term + down */}
-                <View style={styles.closingCard}>
-                  <View style={styles.closingHead}>
-                    <View style={[styles.closingIcon, { backgroundColor: COLORS.purple + '22' }]}>
-                      <Ionicons name="document-text" size={16} color={COLORS.purple} />
+                {zipInfo ? (
+                  <View style={styles.zipResult}>
+                    <View style={styles.zipResultHead}>
+                      <Ionicons name="checkmark-circle" size={16} color={COLORS.green} />
+                      <Text style={styles.zipResultPlace}>
+                        {zipInfo.city}
+                        {zipInfo.countyDisplay ? ` · ${zipInfo.countyDisplay}` : ''}
+                        {`, ${zipInfo.stateCode}`}
+                      </Text>
                     </View>
-                    <Text style={styles.closingLabel}>Est. Closing Costs</Text>
-                    <Text style={[styles.closingValue, { color: COLORS.purple }]}>
-                      {fmtMoney(closingCosts)}
+
+                    <View style={styles.zipRecRow}>
+                      <View style={styles.zipRecCol}>
+                        <Text style={styles.zipRecLabel}>Est. Property Tax</Text>
+                        <Text style={[styles.zipRecValue, { color: COLORS.amber }]}>
+                          {recTax != null ? `${fmtMoney(recTax)}/mo` : '—'}
+                        </Text>
+                        <Text style={styles.zipRecNote}>
+                          {zipInfo.effectiveRate.toFixed(2)}% of home value
+                        </Text>
+                      </View>
+                      <View style={styles.zipRecCol}>
+                        <Text style={styles.zipRecLabel}>Est. Home Insurance</Text>
+                        <Text style={[styles.zipRecValue, { color: COLORS.teal }]}>
+                          {recIns != null ? `${fmtMoney(recIns)}/mo` : '—'}
+                        </Text>
+                        <Text style={styles.zipRecNote}>{zipInfo.state} avg</Text>
+                      </View>
+                    </View>
+
+                    {/* Closing costs estimate derived from ZIP + price + term + down */}
+                    <View style={styles.closingCard}>
+                      <View style={styles.closingHead}>
+                        <View
+                          style={[styles.closingIcon, { backgroundColor: COLORS.purple + '22' }]}
+                        >
+                          <Ionicons name="document-text" size={16} color={COLORS.purple} />
+                        </View>
+                        <Text style={styles.closingLabel}>Est. Closing Costs</Text>
+                        <Text style={[styles.closingValue, { color: COLORS.purple }]}>
+                          {fmtMoney(closingCosts)}
+                        </Text>
+                      </View>
+                      <Text style={styles.closingNote}>
+                        ~{(closingRatePct * termAdj * downAdj).toFixed(1)}% of home price · based on{' '}
+                        {zipInfo.state}, {term}yr term, {downPct.toFixed(0)}% down.
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.applyAllBtn}
+                      activeOpacity={0.9}
+                      onPress={applyBothRecommendations}
+                    >
+                      <Ionicons name="download" size={16} color="#fff" />
+                      <Text style={styles.applyAllText}>Apply tax & insurance to my estimate</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.zipDisclaimer}>
+                      Estimates are based on {zipInfo.state} area data. Actual amounts vary —
+                      override below for accuracy.
                     </Text>
                   </View>
-                  <Text style={styles.closingNote}>
-                    ~{(closingRatePct * termAdj * downAdj).toFixed(1)}% of home price · based on{' '}
-                    {zipInfo.state}, {term}yr term, {downPct.toFixed(0)}% down.
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.applyAllBtn}
-                  activeOpacity={0.9}
-                  onPress={applyBothRecommendations}
-                >
-                  <Ionicons name="download" size={16} color="#fff" />
-                  <Text style={styles.applyAllText}>Apply tax & insurance to my estimate</Text>
-                </TouchableOpacity>
-                <Text style={styles.zipDisclaimer}>
-                  Estimates are based on {zipInfo.state} area data. Actual amounts vary — override
-                  below for accuracy.
-                </Text>
+                ) : null}
               </View>
             ) : null}
           </View>
 
-          <Text style={styles.sectionTitle}>Monthly Extras</Text>
-          <View style={styles.extrasHint}>
-            <Ionicons name="repeat" size={15} color={COLORS.textMuted} />
-            <Text style={styles.extrasHintText}>
-              Enter each amount at whatever cadence you're billed — we'll convert it to a monthly
-              figure.
-            </Text>
+          <Text style={styles.sectionTitle}>Taxes, Insurance & HOA</Text>
+          <View style={styles.costsCard}>
+            <TouchableOpacity
+              style={styles.accordionHead}
+              activeOpacity={0.82}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: costsExpanded }}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setCostsExpanded((current) => !current);
+              }}
+            >
+              <View style={[styles.zipIcon, { backgroundColor: COLORS.accent + '22' }]}>
+                <Ionicons name="wallet" size={18} color={COLORS.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.zipTitle}>Monthly housing costs</Text>
+                <Text style={styles.zipSub}>Open to fine-tune taxes, insurance and HOA.</Text>
+              </View>
+              <Ionicons
+                name={costsExpanded ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={COLORS.textMuted}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.costSummaryRow}>
+              <CostSummary label="Tax" value={taxMonthly} color={COLORS.amber} />
+              <CostSummary label="Insurance" value={insuranceMonthly} color={COLORS.teal} />
+              <CostSummary label="HOA" value={hoaMonthly} color={COLORS.pink} />
+            </View>
+
+            {costsExpanded ? (
+              <View style={styles.accordionBody}>
+                <View style={styles.extrasHint}>
+                  <Ionicons name="repeat" size={15} color={COLORS.textMuted} />
+                  <Text style={styles.extrasHintText}>
+                    Enter each amount at whatever cadence you're billed — we'll convert it to a
+                    monthly figure.
+                  </Text>
+                </View>
+                <ExtraField
+                  label="Property Tax"
+                  value={tax}
+                  onChangeValue={setTax}
+                  freq={taxFreq}
+                  onChangeFreq={setTaxFreq}
+                  accentColor={COLORS.amber}
+                  recommended={zipInfo ? recTax : null}
+                />
+                <ExtraField
+                  label="Home Insurance"
+                  value={insurance}
+                  onChangeValue={setInsurance}
+                  freq={insuranceFreq}
+                  onChangeFreq={setInsuranceFreq}
+                  accentColor={COLORS.teal}
+                  recommended={zipInfo ? recIns : null}
+                />
+                <ExtraField
+                  label="HOA Dues"
+                  value={hoa}
+                  onChangeValue={setHoa}
+                  freq={hoaFreq}
+                  onChangeFreq={setHoaFreq}
+                  accentColor={COLORS.pink}
+                />
+              </View>
+            ) : null}
           </View>
-          <ExtraField
-            label="Property Tax"
-            value={tax}
-            onChangeValue={setTax}
-            freq={taxFreq}
-            onChangeFreq={setTaxFreq}
-            accentColor={COLORS.amber}
-            num={num}
-            recommended={zipInfo ? recTax : null}
-          />
-          <ExtraField
-            label="Home Insurance"
-            value={insurance}
-            onChangeValue={setInsurance}
-            freq={insuranceFreq}
-            onChangeFreq={setInsuranceFreq}
-            accentColor={COLORS.teal}
-            num={num}
-            recommended={zipInfo ? recIns : null}
-          />
-          <ExtraField
-            label="HOA Dues"
-            value={hoa}
-            onChangeValue={setHoa}
-            freq={hoaFreq}
-            onChangeFreq={setHoaFreq}
-            accentColor={COLORS.pink}
-            num={num}
-          />
 
           {pmiEligible ? (
             <View style={styles.pmiCard}>
@@ -561,51 +656,27 @@ export default function EstimatorScreen() {
                     of about {fmtMoney((loanAmount * 0.007) / 12)}/mo.
                   </Text>
                 </View>
-              </View>
-              <View style={styles.toggleRow}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={[styles.toggleBtn, includePmi && styles.toggleBtnActive]}
-                  onPress={() => {
+                <Switch
+                  accessibilityLabel="Include private mortgage insurance"
+                  value={includePmi}
+                  onValueChange={(value) => {
                     Haptics.selectionAsync();
-                    setIncludePmi(true);
+                    setIncludePmi(value);
                   }}
-                >
-                  <Ionicons
-                    name={includePmi ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={16}
-                    color={includePmi ? '#fff' : COLORS.textMuted}
-                  />
-                  <Text style={[styles.toggleText, includePmi && styles.toggleTextActive]}>
-                    Include PMI
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  style={[styles.toggleBtn, !includePmi && styles.toggleBtnActiveOff]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setIncludePmi(false);
-                  }}
-                >
-                  <Ionicons
-                    name={!includePmi ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={16}
-                    color={!includePmi ? '#fff' : COLORS.textMuted}
-                  />
-                  <Text style={[styles.toggleText, !includePmi && styles.toggleTextActive]}>
-                    Exclude PMI
-                  </Text>
-                </TouchableOpacity>
+                  trackColor={{ false: COLORS.surfaceElevated, true: COLORS.pink }}
+                  thumbColor="#fff"
+                  ios_backgroundColor={COLORS.surfaceElevated}
+                />
               </View>
             </View>
           ) : null}
 
-          <TouchableOpacity style={styles.calcBtn} activeOpacity={0.9} onPress={calculate}>
-            <Ionicons name="calculator" size={20} color="#fff" />
-            <Text style={styles.calcText}>See Full Breakdown</Text>
-          </TouchableOpacity>
-          <View style={{ height: 20 }} />
+          <View style={styles.bottomAction}>
+            <TouchableOpacity style={styles.calcBtn} activeOpacity={0.9} onPress={calculate}>
+              <Ionicons name="calculator" size={20} color="#fff" />
+              <Text style={styles.calcText}>See Full Breakdown</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -614,7 +685,8 @@ export default function EstimatorScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  scroll: { padding: 20, paddingBottom: 40 },
+  formScroll: { flex: 1 },
+  scroll: { padding: 20, paddingBottom: 24 },
   restoreBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -626,37 +698,113 @@ const styles = StyleSheet.create({
   },
   restoreText: { color: COLORS.accent, fontSize: 13, fontWeight: '700' },
   previewCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 20,
-    padding: 22,
-    alignItems: 'center',
+    backgroundColor: '#17243A',
+    borderRadius: 18,
+    padding: 18,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 24,
+    borderColor: 'rgba(100,170,245,0.30)',
+    marginBottom: 18,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 9,
+    elevation: 3,
   },
-  previewLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+  previewAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: '#4F9FF5',
+  },
+  previewHead: { flexDirection: 'row', alignItems: 'center' },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: COLORS.green,
+    marginRight: 7,
+  },
+  previewLabel: {
+    color: '#9EC9F5',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  previewStatus: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    marginLeft: 'auto',
+  },
+  previewAmountRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 11 },
   previewValue: {
-    color: COLORS.accent,
-    fontSize: 44,
+    color: COLORS.textPrimary,
+    fontSize: 40,
     fontWeight: '900',
-    marginVertical: 6,
-    letterSpacing: -1,
+    letterSpacing: -1.2,
   },
-  previewRow: { flexDirection: 'row', gap: 20 },
-  previewSub: { color: COLORS.textMuted, fontSize: 13, fontWeight: '600' },
+  previewUnit: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 7,
+    marginBottom: 6,
+  },
+  previewDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 14 },
+  previewBreakdown: { flexDirection: 'row', alignItems: 'stretch' },
+  previewMetric: { flex: 1 },
+  previewMetricDivider: {
+    width: 1,
+    backgroundColor: COLORS.border,
+    marginHorizontal: 14,
+  },
+  previewMetricLabel: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 14,
+  },
+  previewMetricValue: {
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  previewDisclosure: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: 'rgba(8,20,39,0.38)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 14,
+  },
+  previewDisclosureText: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    flex: 1,
+  },
   sectionTitle: {
     color: COLORS.textPrimary,
     fontSize: 17,
     fontWeight: '800',
-    marginTop: 8,
-    marginBottom: 14,
+    marginTop: 7,
+    marginBottom: 11,
   },
-  optional: { color: COLORS.textMuted, fontSize: 13, fontWeight: '600' },
+  basicsCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    padding: 16,
+    paddingBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 10,
+  },
   label: {
     color: COLORS.textSecondary,
     fontSize: 13,
@@ -664,7 +812,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 2,
   },
-  termRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
+  termRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   termBtn: {
     flex: 1,
     height: 50,
@@ -678,16 +826,21 @@ const styles = StyleSheet.create({
   termBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
   termText: { color: COLORS.textSecondary, fontWeight: '700', fontSize: 15 },
   termTextActive: { color: '#fff' },
-  zipHeadRow: { marginTop: 8 },
   zipCard: {
     backgroundColor: COLORS.card,
     borderRadius: 18,
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  zipHead: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  accordionHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  accordionBody: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    marginTop: 14,
+    paddingTop: 14,
+  },
   zipIcon: {
     width: 36,
     height: 36,
@@ -701,7 +854,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     marginTop: 4,
-    lineHeight: 17,
+    lineHeight: 16,
   },
   zipInputRow: { flexDirection: 'row', gap: 10 },
   zipInputWrap: {
@@ -805,7 +958,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-start',
-    marginTop: -4,
+    marginTop: 0,
     marginBottom: 14,
     paddingHorizontal: 2,
   },
@@ -839,6 +992,32 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   recApplyText: { fontSize: 12, fontWeight: '800' },
+  costsCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 10,
+  },
+  costSummaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+  costSummaryItem: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 11,
+    paddingHorizontal: 9,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  costSummaryDot: { width: 7, height: 7, borderRadius: 4, marginBottom: 6 },
+  costSummaryLabel: { color: COLORS.textMuted, fontSize: 9, fontWeight: '700' },
+  costSummaryValue: { fontSize: 12, fontWeight: '900', marginTop: 3 },
   pmiCard: {
     backgroundColor: COLORS.card,
     borderRadius: 16,
@@ -847,7 +1026,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  pmiHead: { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  pmiHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   pmiIcon: {
     width: 34,
     height: 34,
@@ -863,23 +1042,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
     lineHeight: 17,
   },
-  toggleRow: { flexDirection: 'row', gap: 10 },
-  toggleBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: COLORS.surfaceElevated,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toggleBtnActive: { backgroundColor: COLORS.pink, borderColor: COLORS.pink },
-  toggleBtnActiveOff: { backgroundColor: COLORS.textMuted, borderColor: COLORS.textMuted },
-  toggleText: { color: COLORS.textSecondary, fontWeight: '700', fontSize: 13 },
-  toggleTextActive: { color: '#fff' },
+  bottomAction: { marginTop: 4, paddingTop: 4, paddingBottom: 8 },
   calcBtn: {
     flexDirection: 'row',
     gap: 10,
@@ -888,7 +1051,6 @@ const styles = StyleSheet.create({
     height: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 24,
     shadowColor: COLORS.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,

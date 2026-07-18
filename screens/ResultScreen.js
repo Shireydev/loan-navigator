@@ -1,13 +1,14 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  Animated,
   TouchableOpacity,
   TextInput,
-  PanResponder,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -18,6 +19,10 @@ import * as Haptics from 'expo-haptics';
 import DonutChart from '../components/DonutChart';
 import { COLORS, amortize, monthlyPI, fmtMoney } from '../theme';
 import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
+
+const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
+const HEADER_COLLAPSE_DISTANCE = 96;
+const HEADER_DETAILS_HEIGHT = 112;
 
 function Row({ label, value, color = COLORS.textPrimary, bold }) {
   return (
@@ -84,11 +89,11 @@ function pmiRemovalMonth(principal, annualRatePct, years, homePrice) {
   return null;
 }
 
-const SLIDER_H = 44;
-
 export default function ResultScreen({ route }) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const resultsScrollRef = useRef(null);
   const [saved, setSaved] = useState(false);
   const p = route.params;
   const [name, setName] = useState(p.presetName || '');
@@ -118,7 +123,6 @@ export default function ResultScreen({ route }) {
   }, [pmiRemovalMo]);
 
   const [yearIdx, setYearIdx] = useState(0);
-  const [trackW, setTrackW] = useState(0);
   const maxIdx = Math.max(yearData.length - 1, 0);
   const cur = yearData[Math.min(yearIdx, maxIdx)] || {
     principal: p.monthlyPI,
@@ -127,40 +131,51 @@ export default function ResultScreen({ route }) {
     balance: p.loanAmount,
   };
 
-  const setIdxFromX = useCallback(
-    (x) => {
-      if (trackW <= 0 || maxIdx === 0) return;
-      const ratio = Math.max(0, Math.min(1, x / trackW));
-      const idx = Math.round(ratio * maxIdx);
-      setYearIdx(idx);
+  const changeYear = useCallback(
+    (change) => {
+      setYearIdx((current) => Math.max(0, Math.min(maxIdx, current + change)));
+      Haptics.selectionAsync();
     },
-    [trackW, maxIdx],
+    [maxIdx],
   );
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (e) => setIdxFromX(e.nativeEvent.locationX),
-        onPanResponderMove: (e) => setIdxFromX(e.nativeEvent.locationX),
-        onPanResponderRelease: () => Haptics.selectionAsync(),
-      }),
-    [setIdxFromX],
-  );
-
-  const thumbLeft = maxIdx > 0 ? (yearIdx / maxIdx) * trackW : 0;
+  const collapseProgress = scrollY.interpolate({
+    inputRange: [0, HEADER_COLLAPSE_DISTANCE],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+  const headerDetailsHeight = scrollY.interpolate({
+    inputRange: [0, HEADER_COLLAPSE_DISTANCE],
+    outputRange: [HEADER_DETAILS_HEIGHT, 0],
+    extrapolate: 'clamp',
+  });
+  const headerDetailsOpacity = scrollY.interpolate({
+    inputRange: [0, HEADER_COLLAPSE_DISTANCE * 0.7],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const paymentFontSize = collapseProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [44, 30],
+  });
+  const headerBottomPadding = collapseProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [20, 10],
+  });
+  const headerBarMargin = collapseProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [14, 5],
+  });
 
   // PMI automatically cancels once the loan-to-value ratio reaches 78% —
   // i.e. once the remaining balance drops to 78% of the original home price.
-  // As the slider progresses to the year that happens, PMI goes to 0%.
+  // As the selected year reaches that point, PMI goes to 0%.
   const ltv = p.price > 0 ? (cur.balance / p.price) * 100 : 0;
   const pmiActive = p.pmi > 0 && ltv > 78;
   const curPmi = pmiActive ? p.pmi : 0;
 
   // The donut chart shows the FULL monthly payment breakdown, with Principal
   // and Interest as two SEPARATE slices. Their split changes with the year
-  // selected on the slider below. Ordered/colored to match the reference.
+  // selected in the year navigator below. Ordered/colored to match the reference.
   const donutSegments = [
     { label: 'Interest', value: cur.interest, color: COLORS.amber },
     { label: 'Principal', value: cur.principal, color: COLORS.accent },
@@ -168,9 +183,9 @@ export default function ResultScreen({ route }) {
     { label: 'Home Insurance', value: p.insurance, color: '#178A3D' },
     ...(p.hoa > 0 ? [{ label: 'HOA Dues', value: p.hoa, color: COLORS.purple }] : []),
     // Keep this row mounted after PMI is removed so the breakdown card does
-    // not change height while the user is dragging the year slider.
+    // not change height while the user cycles through loan years.
     ...(p.pmi > 0
-      ? [{ label: 'Private Mortgage Insurance', value: curPmi, color: COLORS.red }]
+      ? [{ label: 'Private Mortgage Insurance (PMI)', value: curPmi, color: COLORS.red }]
       : []),
   ];
 
@@ -203,226 +218,309 @@ export default function ResultScreen({ route }) {
     }
   };
 
+  const revealNameInput = useCallback(() => {
+    const scrollToName = () => resultsScrollRef.current?.scrollToEnd({ animated: true });
+    requestAnimationFrame(scrollToName);
+    setTimeout(scrollToName, 280);
+  }, []);
+
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[COLORS.gradientA, COLORS.gradientB]}
+      <AnimatedLinearGradient
+        colors={['#07162F', '#0A2D61']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.header, { paddingTop: insets.top + 12 }]}
+        style={[styles.header, { paddingTop: insets.top + 12, paddingBottom: headerBottomPadding }]}
       >
-        <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <Animated.View style={[styles.headerBar, { marginBottom: headerBarMargin }]}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.headerBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Back to mortgage estimate"
+          >
             <Ionicons name="chevron-back" size={24} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Payment Breakdown</Text>
-          <View style={{ width: 40 }} />
-        </View>
-        <Text style={styles.bigValue}>{fmtMoney(p.total)}</Text>
-        <Text style={styles.bigLabel}>per month</Text>
-      </LinearGradient>
+          <Text style={styles.headerTitle}>Your Mortgage Plan</Text>
+          <TouchableOpacity
+            onPress={() => navigation.getParent()?.navigate('Home')}
+            style={styles.headerBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Return to home"
+          >
+            <Ionicons name="home-outline" size={21} color="#8CC5FF" />
+          </TouchableOpacity>
+        </Animated.View>
+        <Text style={styles.estimateLabel}>ESTIMATED MONTHLY PAYMENT</Text>
+        <Animated.Text style={[styles.bigValue, { fontSize: paymentFontSize }]}>
+          {fmtMoney(p.total)}
+        </Animated.Text>
+        <Animated.View
+          style={[
+            styles.headerDetails,
+            { height: headerDetailsHeight, opacity: headerDetailsOpacity },
+          ]}
+        >
+          <Text style={styles.bigLabel}>per month · based on your inputs</Text>
+          <View style={styles.headerFacts}>
+            <View style={styles.headerFact}>
+              <Text style={styles.headerFactLabel}>Loan amount</Text>
+              <Text style={styles.headerFactValue}>{fmtMoney(p.loanAmount)}</Text>
+            </View>
+            <View style={styles.headerFactDivider} />
+            <View style={styles.headerFact}>
+              <Text style={styles.headerFactLabel}>Rate & term</Text>
+              <Text style={styles.headerFactValue}>
+                {p.rate.toFixed(2)}% · {p.term} years
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.headerDisclosure}>Planning estimate — not a lender quote.</Text>
+        </Animated.View>
+      </AnimatedLinearGradient>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Donut chart — slider below drives the P&I split */}
-        <View style={styles.card}>
-          <DonutChart
-            segments={donutSegments}
-            centerValue={fmtMoney(pieTotal)}
-            centerLabel="PER MONTH"
-            animateChanges={false}
-          />
+      <KeyboardAvoidingView
+        style={styles.resultsBody}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Animated.ScrollView
+          ref={resultsScrollRef}
+          contentContainerStyle={styles.scroll}
+          scrollEventThrottle={16}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+            useNativeDriver: false,
+          })}
+        >
+          <Text style={styles.sectionTitle}>Payment Over Time</Text>
+          <View style={styles.card}>
+            <DonutChart
+              segments={donutSegments}
+              centerValue={fmtMoney(pieTotal)}
+              centerLabel="/ MONTH"
+              animateChanges={false}
+            />
+            <View style={styles.yearNavigatorPanel}>
+              <Text style={styles.yearNavigatorHint}>Review your payment year by year</Text>
+              <View style={styles.yearNavigator}>
+                <TouchableOpacity
+                  style={[styles.yearStepBtn, yearIdx === 0 && styles.yearStepBtnDisabled]}
+                  onPress={() => changeYear(-1)}
+                  disabled={yearIdx === 0}
+                  activeOpacity={0.75}
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous loan year"
+                >
+                  <Ionicons name="chevron-back" size={24} color={COLORS.accent} />
+                </TouchableOpacity>
 
-          {/* Reference-style legend: colored progress bar + label + amount */}
-          <View style={styles.legend}>
-            {donutSegments.map((b, i) => (
-              <View key={i} style={styles.legendRow}>
-                <View style={styles.legendMain}>
-                  <Text style={styles.bdLabel}>{b.label}</Text>
-                  <View style={styles.barTrack}>
-                    <View
-                      style={[
-                        styles.barFill,
-                        { width: `${(b.value / maxSeg) * 100}%`, backgroundColor: b.color },
-                      ]}
-                    />
+                <View
+                  style={styles.yearReadout}
+                  accessible
+                  accessibilityLabel={`Loan year ${cur.year} of ${p.term}`}
+                >
+                  <Text style={styles.yearEyebrow}>LOAN YEAR</Text>
+                  <View style={styles.yearValueRow}>
+                    <Text style={styles.yearNumber}>{cur.year}</Text>
+                    <Text style={styles.yearTotal}>of {p.term}</Text>
                   </View>
                 </View>
-                <Text style={styles.bdValue}>{fmtMoney(b.value)}</Text>
+
+                <TouchableOpacity
+                  style={[styles.yearStepBtn, yearIdx === maxIdx && styles.yearStepBtnDisabled]}
+                  onPress={() => changeYear(1)}
+                  disabled={yearIdx === maxIdx}
+                  activeOpacity={0.75}
+                  accessibilityRole="button"
+                  accessibilityLabel="Next loan year"
+                >
+                  <Ionicons name="chevron-forward" size={24} color={COLORS.accent} />
+                </TouchableOpacity>
               </View>
-            ))}
-          </View>
+            </View>
 
-          {/* Year slider — controls the donut's Principal vs Interest split */}
-          <View style={styles.sliderHeader}>
-            <Text style={styles.sliderLabel}>Loan Year</Text>
-            <View style={styles.yearBadge}>
-              <Text style={styles.yearBadgeText}>
-                Year {cur.year} of {p.term}
+            <View style={styles.legend}>
+              {donutSegments.map((b) => (
+                <View key={b.label} style={styles.legendRow}>
+                  <View style={styles.legendMain}>
+                    <Text style={styles.bdLabel}>{b.label}</Text>
+                    <View style={styles.barTrack}>
+                      <View
+                        style={[
+                          styles.barFill,
+                          { width: `${(b.value / maxSeg) * 100}%`, backgroundColor: b.color },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                  <Text style={styles.bdValue}>{fmtMoney(b.value)}</Text>
+                </View>
+              ))}
+            </View>
+
+            {p.pmi > 0 ? (
+              <View
+                style={[
+                  styles.pmiNote,
+                  { backgroundColor: (pmiActive ? COLORS.red : COLORS.green) + '14' },
+                ]}
+              >
+                <Ionicons
+                  name={pmiActive ? 'shield' : 'shield-checkmark'}
+                  size={16}
+                  color={pmiActive ? COLORS.red : COLORS.green}
+                />
+                <Text style={styles.pmiNoteText}>
+                  {pmiActive
+                    ? `PMI still applies — loan-to-value is ${ltv.toFixed(0)}%.${pmiRemovalText ? ` Removed after ${pmiRemovalText} of payments.` : ''}`
+                    : `PMI removed — loan-to-value reached ${ltv.toFixed(0)}%.`}
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={styles.balanceNote}>
+              <Ionicons name="wallet" size={16} color={COLORS.accent} />
+              <Text style={styles.balanceNoteText}>
+                Remaining balance after year {cur.year}: {fmtMoney(cur.balance)}
               </Text>
             </View>
           </View>
-          <View
-            style={styles.sliderTrackWrap}
-            onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
-            {...panResponder.panHandlers}
-          >
-            <View style={styles.sliderTrackBg} />
-            <View style={[styles.sliderTrackFill, { width: thumbLeft }]} />
-            <View style={[styles.sliderThumb, { left: Math.max(0, thumbLeft - 12) }]}>
-              <Ionicons name="ellipse" size={12} color="#fff" />
-            </View>
-          </View>
-          <View style={styles.sliderScale}>
-            <Text style={styles.scaleText}>Yr 1</Text>
-            <Text style={styles.scaleText}>Yr {p.term}</Text>
-          </View>
 
-          {p.pmi > 0 ? (
-            <View
-              style={[
-                styles.pmiNote,
-                { backgroundColor: (pmiActive ? COLORS.red : COLORS.green) + '14' },
-              ]}
-            >
-              <Ionicons
-                name={pmiActive ? 'shield' : 'shield-checkmark'}
-                size={16}
-                color={pmiActive ? COLORS.red : COLORS.green}
-              />
-              <Text style={styles.pmiNoteText}>
-                {pmiActive
-                  ? `PMI still applies — loan-to-value is ${ltv.toFixed(0)}%.${pmiRemovalText ? ` Removed after ${pmiRemovalText} of payments.` : ''}`
-                  : `PMI removed — loan-to-value reached ${ltv.toFixed(0)}%.`}
-              </Text>
-            </View>
-          ) : null}
-
-          <View style={styles.balanceNote}>
-            <Ionicons name="wallet" size={16} color={COLORS.accent} />
-            <Text style={styles.balanceNoteText}>
-              Remaining balance after year {cur.year}: {fmtMoney(cur.balance)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Loan Summary</Text>
-          <Row label="Home Price" value={fmtMoney(p.price)} />
-          <Row
-            label="Down Payment"
-            value={`${fmtMoney(p.down)} (${p.downPct.toFixed(0)}%)`}
-            color={COLORS.green}
-          />
-          <Row label="Loan Amount" value={fmtMoney(p.loanAmount)} />
-          <Row label="Interest Rate" value={`${p.rate.toFixed(2)}%`} color={COLORS.purple} />
-          <Row label="Term" value={`${p.term} years`} />
-          {p.closingCosts > 0 ? (
-            <Row
-              label={
-                p.closingState ? `Est. Closing Costs (${p.closingState})` : 'Est. Closing Costs'
-              }
-              value={fmtMoney(p.closingCosts)}
-              color={COLORS.purple}
-            />
-          ) : null}
-          {p.pmi > 0 ? (
-            <Row
-              label={pmiRemovalText ? `PMI (removed after ${pmiRemovalText})` : 'PMI'}
-              value={`${fmtMoney(p.pmi)}/mo`}
-              color={COLORS.pink}
-            />
-          ) : p.downPct < 20 ? (
-            <Row label="PMI" value="Excluded" color={COLORS.textMuted} />
-          ) : null}
-        </View>
-
-        {p.closingCosts > 0 ? (
+          <Text style={styles.sectionTitle}>Loan Snapshot</Text>
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Closing Costs</Text>
-            <Text style={styles.closingBig}>{fmtMoney(p.closingCosts)}</Text>
-            <View style={styles.closingRow}>
-              <Ionicons name="document-text" size={18} color={COLORS.purple} />
-              <Text style={styles.closingText}>
-                Approximate one-time closing costs{p.closingState ? ` for ${p.closingState}` : ''},
-                estimated from your home price, {p.term}-year term, and {p.downPct.toFixed(0)}% down
-                payment. Includes lender, title, and typical government fees. Actual costs vary by
-                lender.
+            <Row label="Home Price" value={fmtMoney(p.price)} />
+            <Row
+              label="Down Payment"
+              value={`${fmtMoney(p.down)} (${p.downPct.toFixed(0)}%)`}
+              color={COLORS.green}
+            />
+            <Row label="Loan Amount" value={fmtMoney(p.loanAmount)} />
+            <Row label="Interest Rate" value={`${p.rate.toFixed(2)}%`} color={COLORS.purple} />
+            <Row label="Term" value={`${p.term} years`} />
+            {p.closingCosts > 0 ? (
+              <Row
+                label={
+                  p.closingState ? `Est. Closing Costs (${p.closingState})` : 'Est. Closing Costs'
+                }
+                value={fmtMoney(p.closingCosts)}
+                color={COLORS.purple}
+              />
+            ) : null}
+            {p.pmi > 0 ? (
+              <Row
+                label={pmiRemovalText ? `PMI (removed after ${pmiRemovalText})` : 'PMI'}
+                value={`${fmtMoney(p.pmi)}/mo`}
+                color={COLORS.pink}
+              />
+            ) : p.downPct < 20 ? (
+              <Row label="PMI" value="Excluded" color={COLORS.textMuted} />
+            ) : null}
+          </View>
+
+          {p.closingCosts > 0 ? (
+            <>
+              <Text style={styles.sectionTitle}>Closing Costs</Text>
+              <View style={styles.card}>
+                <Text style={styles.closingBig}>{fmtMoney(p.closingCosts)}</Text>
+                <View style={styles.closingRow}>
+                  <Ionicons name="document-text" size={18} color={COLORS.purple} />
+                  <Text style={styles.closingText}>
+                    Approximate one-time closing costs
+                    {p.closingState ? ` for ${p.closingState}` : ''}, estimated from your home
+                    price, {p.term}-year term, and {p.downPct.toFixed(0)}% down payment. Includes
+                    lender, title, and typical government fees. Actual costs vary by lender.
+                  </Text>
+                </View>
+                <View style={styles.closingBreak}>
+                  <Row
+                    label="Cash to Close (est.)"
+                    value={fmtMoney(p.down + p.closingCosts)}
+                    color={COLORS.accent}
+                    bold
+                  />
+                </View>
+              </View>
+            </>
+          ) : null}
+
+          <Text style={styles.sectionTitle}>Over the Life of the Loan</Text>
+          <View style={styles.card}>
+            <Row
+              label="Total Interest Paid"
+              value={fmtMoney(am.totalInterest)}
+              color={COLORS.red}
+              bold
+            />
+            <Row label="Total Principal + Interest" value={fmtMoney(am.totalPaid)} bold />
+            <View style={styles.interestBanner}>
+              <Ionicons name="alert-circle" size={18} color={COLORS.amber} />
+              <Text style={styles.interestText}>
+                You'll pay {fmtMoney(am.totalInterest)} in interest — that's{' '}
+                {((am.totalInterest / p.loanAmount) * 100).toFixed(0)}% of your loan amount.
               </Text>
             </View>
-            <View style={styles.closingBreak}>
-              <Row
-                label="Cash to Close (est.)"
-                value={fmtMoney(p.down + p.closingCosts)}
-                color={COLORS.accent}
-                bold
-              />
+          </View>
+
+          <Text style={styles.sectionTitle}>
+            {saved ? 'Estimate Saved' : 'Save This Estimate for Later'}
+          </Text>
+          <View style={styles.actionCard}>
+            {!saved ? (
+              <View>
+                <Text style={styles.nameLabel}>Estimate name</Text>
+                <TextInput
+                  style={styles.nameInput}
+                  value={name}
+                  onChangeText={setName}
+                  onFocus={revealNameInput}
+                  placeholder="e.g. Maple St. Home"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.saveBtn, saved && styles.savedBtn]}
+              activeOpacity={0.9}
+              onPress={saveEstimate}
+              disabled={saved}
+              accessibilityRole="button"
+            >
+              <Ionicons name={saved ? 'checkmark-circle' : 'bookmark'} size={20} color="#fff" />
+              <Text style={styles.saveText}>{saved ? 'Saved to your list' : 'Save Estimate'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.tipBtn}
+            activeOpacity={0.8}
+            onPress={() => navigation.getParent()?.navigate('Payoff')}
+          >
+            <Ionicons name="trending-down" size={20} color={COLORS.teal} />
+            <View style={styles.tipCopy}>
+              <Text style={styles.tipTitle}>Explore a faster payoff</Text>
+              <Text style={styles.tipText}>See the impact of additional principal payments.</Text>
             </View>
-          </View>
-        ) : null}
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Over the Life of the Loan</Text>
-          <Row
-            label="Total Interest Paid"
-            value={fmtMoney(am.totalInterest)}
-            color={COLORS.red}
-            bold
-          />
-          <Row label="Total of Payments" value={fmtMoney(am.totalPaid)} bold />
-          <View style={styles.interestBanner}>
-            <Ionicons name="alert-circle" size={18} color={COLORS.amber} />
-            <Text style={styles.interestText}>
-              You'll pay {fmtMoney(am.totalInterest)} in interest — that's{' '}
-              {((am.totalInterest / p.loanAmount) * 100).toFixed(0)}% of your loan amount.
-            </Text>
-          </View>
-        </View>
-
-        {!saved ? (
-          <View style={styles.nameCard}>
-            <Text style={styles.nameLabel}>Name this estimate</Text>
-            <TextInput
-              style={styles.nameInput}
-              value={name}
-              onChangeText={setName}
-              placeholder="e.g. Maple St. Home"
-              placeholderTextColor={COLORS.textMuted}
-            />
-          </View>
-        ) : null}
-
-        <TouchableOpacity
-          style={[styles.saveBtn, saved && styles.savedBtn]}
-          activeOpacity={0.9}
-          onPress={saveEstimate}
-          disabled={saved}
-        >
-          <Ionicons name={saved ? 'checkmark-circle' : 'bookmark'} size={20} color="#fff" />
-          <Text style={styles.saveText}>{saved ? 'Saved to your list' : 'Save this Estimate'}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.tipBtn}
-          activeOpacity={0.8}
-          onPress={() => navigation.getParent()?.navigate('Payoff')}
-        >
-          <Ionicons name="trending-down" size={20} color={COLORS.teal} />
-          <Text style={styles.tipText}>See how extra payments save you thousands</Text>
-          <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
-        </TouchableOpacity>
-        <View style={{ height: 30 }} />
-      </ScrollView>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+          </TouchableOpacity>
+          <View style={{ height: 30 }} />
+        </Animated.ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  resultsBody: { flex: 1 },
   header: {
     paddingHorizontal: 20,
-    paddingBottom: 28,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 22,
+    borderBottomRightRadius: 22,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(121,184,255,0.24)',
     alignItems: 'center',
   },
   headerBar: {
@@ -430,19 +528,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 10,
+    marginBottom: 14,
   },
-  backBtn: {
+  headerBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(91,169,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(122,190,255,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  bigValue: { color: '#fff', fontSize: 46, fontWeight: '900', letterSpacing: -1 },
-  bigLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600' },
+  estimateLabel: {
+    color: '#9EC9F5',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.25,
+    marginBottom: 5,
+  },
+  bigValue: { color: '#fff', fontSize: 44, fontWeight: '900', letterSpacing: -1 },
+  bigLabel: { color: 'rgba(222,237,255,0.76)', fontSize: 13, fontWeight: '600' },
+  headerDetails: { alignSelf: 'stretch', alignItems: 'center', overflow: 'hidden' },
+  headerFacts: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    backgroundColor: 'rgba(2,15,36,0.26)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(122,190,255,0.16)',
+    paddingVertical: 12,
+    marginTop: 16,
+  },
+  headerFact: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  headerFactDivider: { width: 1, backgroundColor: 'rgba(122,190,255,0.18)' },
+  headerFactLabel: { color: 'rgba(222,237,255,0.62)', fontSize: 11, fontWeight: '600' },
+  headerFactValue: { color: '#fff', fontSize: 14, fontWeight: '800', marginTop: 3 },
+  headerDisclosure: {
+    color: 'rgba(222,237,255,0.56)',
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 10,
+  },
   scroll: { padding: 20 },
   card: {
     backgroundColor: COLORS.card,
@@ -457,8 +585,14 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  cardTitle: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '800', marginBottom: 16 },
-  legend: { marginTop: 26 },
+  sectionTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+    marginTop: 7,
+    marginBottom: 11,
+  },
+  legend: { marginTop: 20 },
   legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -477,56 +611,63 @@ const styles = StyleSheet.create({
   },
   barFill: { height: 5, borderRadius: 3 },
   bdValue: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '900' },
-  sliderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 12,
-  },
-  sliderLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700' },
-  yearBadge: {
-    backgroundColor: COLORS.accent + '22',
-    borderRadius: 10,
+  yearNavigatorPanel: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 13,
+    marginTop: 14,
   },
-  yearBadgeText: { color: COLORS.accent, fontSize: 13, fontWeight: '800' },
-  sliderTrackWrap: {
-    height: SLIDER_H,
-    justifyContent: 'center',
+  yearNavigatorHint: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 10,
   },
-  sliderTrackBg: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.surfaceElevated,
+  yearNavigator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  sliderTrackFill: {
-    position: 'absolute',
-    left: 0,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.accent,
-  },
-  sliderThumb: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: COLORS.accent,
+  yearStepBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: COLORS.accent + '18',
+    borderWidth: 1,
+    borderColor: COLORS.accent + '45',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: COLORS.accent,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOpacity: 0.14,
+    shadowRadius: 5,
+    elevation: 2,
   },
-  sliderScale: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
-  scaleText: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600' },
+  yearStepBtnDisabled: { opacity: 0.35 },
+  yearReadout: {
+    flex: 1,
+    height: 64,
+    borderRadius: 14,
+    backgroundColor: COLORS.surfaceElevated,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '38',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  yearEyebrow: {
+    color: COLORS.textMuted,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.25,
+  },
+  yearValueRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 1 },
+  yearNumber: { color: COLORS.textPrimary, fontSize: 29, fontWeight: '900', letterSpacing: -0.5 },
+  yearTotal: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', marginLeft: 6 },
   pmiNote: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -534,6 +675,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     marginTop: 16,
+    minHeight: 62,
   },
   pmiNoteText: {
     color: COLORS.textSecondary,
@@ -598,13 +740,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 19,
   },
-  nameCard: {
+  actionCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 20,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 14,
+    borderColor: COLORS.accent + '55',
+    marginBottom: 16,
   },
   nameLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', marginBottom: 8 },
   nameInput: {
@@ -626,9 +768,9 @@ const styles = StyleSheet.create({
     height: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginTop: 16,
   },
-  savedBtn: { backgroundColor: COLORS.green },
+  savedBtn: { backgroundColor: COLORS.green, marginTop: 0 },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   tipBtn: {
     flexDirection: 'row',
@@ -640,5 +782,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  tipText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600', flex: 1 },
+  tipCopy: { flex: 1 },
+  tipTitle: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '700' },
+  tipText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500', marginTop: 3 },
 });

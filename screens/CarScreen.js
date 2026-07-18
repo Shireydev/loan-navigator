@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -45,6 +45,7 @@ const LUMP_PRESETS = [1000, 2500, 5000, 10000];
 export default function CarScreen() {
   const route = useRoute();
   const navigation = useNavigation();
+  const scrollRef = useRef(null);
   const [mode, setMode] = useState('purchase');
   const [saved, setSaved] = useState(false);
   const [name, setName] = useState('');
@@ -326,18 +327,33 @@ export default function CarScreen() {
   const defaultName =
     mode === 'purchase' ? 'Car Purchase' : mode === 'refinance' ? 'Car Refinance' : 'Car Payoff';
 
+  const revealSaveField = useCallback(() => {
+    const scrollToSave = () => scrollRef.current?.scrollToEnd({ animated: true });
+    requestAnimationFrame(scrollToSave);
+    setTimeout(scrollToSave, 280);
+  }, []);
+
   return (
     <View style={styles.container}>
       <GradientHeader
         title="Auto Loan Center"
-        subtitle="Purchase, payoff & refinance"
-        icon="car-sport"
+        subtitle="Plan every stage of your auto loan"
+        icon="home-outline"
+        variant="financial"
+        onIconPress={() => navigation.navigate('Home')}
+        iconAccessibilityLabel="Return to home"
       />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.modeRow}>
             {MODES.map((m) => {
               const active = mode === m.key;
@@ -374,69 +390,81 @@ export default function CarScreen() {
               </View>
 
               <Text style={styles.sectionTitle}>Vehicle</Text>
-              <InputField label="Vehicle Price" value={price} onChangeText={setPrice} prefix="$" />
-              <View style={styles.rowInputs}>
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Down Payment"
-                    value={down}
-                    onChangeText={setDown}
-                    prefix="$"
-                    accentColor={COLORS.green}
-                  />
+              <View style={styles.sectionCard}>
+                <InputField
+                  label="Vehicle Price"
+                  value={price}
+                  onChangeText={setPrice}
+                  prefix="$"
+                />
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="Down Payment"
+                      value={down}
+                      onChangeText={setDown}
+                      prefix="$"
+                      accentColor={COLORS.green}
+                    />
+                  </View>
+                  <View style={{ width: 12 }} />
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="Trade-in Value"
+                      value={trade}
+                      onChangeText={setTrade}
+                      prefix="$"
+                      accentColor={COLORS.teal}
+                    />
+                  </View>
                 </View>
-                <View style={{ width: 12 }} />
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Trade-in Value"
-                    value={trade}
-                    onChangeText={setTrade}
-                    prefix="$"
-                    accentColor={COLORS.teal}
-                  />
+                <InputField
+                  label="Sales Tax"
+                  value={salesTax}
+                  onChangeText={setSalesTax}
+                  suffix="%"
+                  accentColor={COLORS.amber}
+                />
+                <View style={styles.hintRow}>
+                  <Ionicons name="information-circle" size={15} color={COLORS.textMuted} />
+                  <Text style={styles.hintText}>
+                    Trade-in value is subtracted before sales tax is applied.
+                  </Text>
                 </View>
-              </View>
-              <InputField
-                label="Sales Tax"
-                value={salesTax}
-                onChangeText={setSalesTax}
-                suffix="%"
-                accentColor={COLORS.amber}
-              />
-              <View style={styles.hintRow}>
-                <Ionicons name="information-circle" size={15} color={COLORS.textMuted} />
-                <Text style={styles.hintText}>
-                  Trade-in value is subtracted from the price before sales tax is applied.
-                </Text>
               </View>
 
               <Text style={styles.sectionTitle}>Loan</Text>
-              <InputField
-                label="Interest Rate (APR)"
-                value={rate}
-                onChangeText={setRate}
-                suffix="%"
-                accentColor={COLORS.purple}
-              />
-              <Text style={styles.label}>Loan Term</Text>
-              <View style={styles.termRow}>
-                {TERMS.map((t) => (
-                  <TouchableOpacity
-                    key={t}
-                    activeOpacity={0.8}
-                    style={[styles.termBtn, term === t && styles.termBtnActive]}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setTerm(t);
-                    }}
-                  >
-                    <Text style={[styles.termText, term === t && styles.termTextActive]}>{t}</Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={styles.sectionCard}>
+                <InputField
+                  label="Interest Rate (APR)"
+                  value={rate}
+                  onChangeText={setRate}
+                  suffix="%"
+                  accentColor={COLORS.purple}
+                />
+                <Text style={styles.label}>Loan Term</Text>
+                <View style={styles.termRow}>
+                  {TERMS.map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      activeOpacity={0.8}
+                      style={[styles.termBtn, term === t && styles.termBtnActive]}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setTerm(t);
+                      }}
+                    >
+                      <Text style={[styles.termText, term === t && styles.termTextActive]}>
+                        {t}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
 
               {amountFinanced > 0 && purAm ? (
                 <>
+                  <Text style={styles.sectionTitle}>Purchase Summary</Text>
                   <View style={styles.statRow}>
                     <StatCard
                       label="Total Interest"
@@ -471,37 +499,49 @@ export default function CarScreen() {
                       last
                     />
                   </View>
-                  {!saved ? (
-                    <NameField value={name} onChangeText={setName} placeholder="e.g. Honda CR-V" />
-                  ) : null}
-                  <TouchableOpacity
-                    style={[styles.saveBtn, saved && { backgroundColor: COLORS.green }]}
-                    activeOpacity={0.9}
-                    onPress={() =>
-                      save(
-                        {
-                          type: SCENARIO_TYPES.AUTO_PURCHASE,
-                          name: name.trim() || defaultName,
-                          price: priceN,
-                          financed: amountFinanced,
-                          rate: rateN,
-                          term,
-                          monthly: carPay,
-                          totalInterest: purAm.totalInterest,
-                          inputs: { price, down, trade, salesTax, rate, term },
-                        },
-                        purchaseValidationError,
-                      )
-                    }
-                    disabled={saved}
-                  >
-                    <Ionicons
-                      name={saved ? 'checkmark-circle' : 'bookmark'}
-                      size={18}
-                      color="#fff"
-                    />
-                    <Text style={styles.saveText}>{saved ? 'Saved' : 'Save Estimate'}</Text>
-                  </TouchableOpacity>
+                  <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>
+                    {saved ? 'Estimate Saved' : 'Save This Estimate for Later'}
+                  </Text>
+                  <View style={styles.actionCard}>
+                    {!saved ? (
+                      <NameField
+                        value={name}
+                        onChangeText={setName}
+                        onFocus={revealSaveField}
+                        placeholder="e.g. Honda CR-V"
+                      />
+                    ) : null}
+                    <TouchableOpacity
+                      style={[styles.saveBtn, saved && styles.savedBtn]}
+                      activeOpacity={0.9}
+                      onPress={() =>
+                        save(
+                          {
+                            type: SCENARIO_TYPES.AUTO_PURCHASE,
+                            name: name.trim() || defaultName,
+                            price: priceN,
+                            financed: amountFinanced,
+                            rate: rateN,
+                            term,
+                            monthly: carPay,
+                            totalInterest: purAm.totalInterest,
+                            inputs: { price, down, trade, salesTax, rate, term },
+                          },
+                          purchaseValidationError,
+                        )
+                      }
+                      disabled={saved}
+                    >
+                      <Ionicons
+                        name={saved ? 'checkmark-circle' : 'bookmark'}
+                        size={18}
+                        color="#fff"
+                      />
+                      <Text style={styles.saveText}>
+                        {saved ? 'Saved to your list' : 'Save Estimate'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </>
               ) : null}
             </>
@@ -510,118 +550,126 @@ export default function CarScreen() {
           {/* ---------------- PAYOFF ---------------- */}
           {mode === 'payoff' ? (
             <>
-              <Text style={styles.sectionTitle}>Your Current Auto Loan</Text>
+              <Text style={styles.sectionTitle}>Current Auto Loan</Text>
+              <View style={styles.sectionCard}>
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="Original Loan Amount"
+                      value={pBalance}
+                      onChangeText={setPBalance}
+                      prefix="$"
+                    />
+                  </View>
 
-              <View style={styles.rowInputs}>
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Original Loan Amount"
-                    value={pBalance}
-                    onChangeText={setPBalance}
-                    prefix="$"
-                  />
+                  <View style={{ width: 12 }} />
+
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="Interest Rate"
+                      value={pRate}
+                      onChangeText={setPRate}
+                      suffix="%"
+                      accentColor={COLORS.purple}
+                    />
+                  </View>
                 </View>
 
-                <View style={{ width: 12 }} />
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="Original Term"
+                      value={pOriginalTerm}
+                      onChangeText={setPOriginalTerm}
+                      suffix="mo"
+                      accentColor={COLORS.purple}
+                    />
+                  </View>
 
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Interest Rate"
-                    value={pRate}
-                    onChangeText={setPRate}
-                    suffix="%"
-                    accentColor={COLORS.purple}
-                  />
+                  <View style={{ width: 12 }} />
+
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="Months Remaining"
+                      value={pMonths}
+                      onChangeText={setPMonths}
+                      suffix="mo"
+                      accentColor={COLORS.teal}
+                    />
+                  </View>
                 </View>
               </View>
 
-              <View style={styles.rowInputs}>
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Original Term"
-                    value={pOriginalTerm}
-                    onChangeText={setPOriginalTerm}
-                    suffix="mo"
-                    accentColor={COLORS.purple}
-                  />
-                </View>
-
-                <View style={{ width: 12 }} />
-
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Months Remaining"
-                    value={pMonths}
-                    onChangeText={setPMonths}
-                    suffix="mo"
-                    accentColor={COLORS.teal}
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.sectionTitle}>Extra Monthly Payment</Text>
-              <InputField
-                label="Additional Principal / mo"
-                value={pExtra}
-                onChangeText={setPExtra}
-                prefix="$"
-                accentColor={COLORS.green}
-              />
-              <View style={styles.presetRow}>
-                {PRESETS.map((amt) => (
-                  <TouchableOpacity
-                    key={amt}
-                    style={[styles.preset, num(pExtra) === amt && styles.presetActive]}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setPExtra(String(amt));
-                    }}
-                  >
-                    <Text
-                      style={[styles.presetText, num(pExtra) === amt && styles.presetTextActive]}
+              <Text style={styles.sectionTitle}>Acceleration Plan</Text>
+              <View style={styles.sectionCard}>
+                <Text style={styles.planLabel}>Extra Each Month</Text>
+                <InputField
+                  label="Additional Principal per Month"
+                  value={pExtra}
+                  onChangeText={setPExtra}
+                  prefix="$"
+                  accentColor={COLORS.green}
+                />
+                <View style={styles.presetRow}>
+                  {PRESETS.map((amt) => (
+                    <TouchableOpacity
+                      key={amt}
+                      style={[styles.preset, num(pExtra) === amt && styles.presetActive]}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setPExtra(String(amt));
+                      }}
                     >
-                      +${amt}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                      <Text
+                        style={[styles.presetText, num(pExtra) === amt && styles.presetTextActive]}
+                      >
+                        +${amt}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-              <Text style={styles.sectionTitle}>One-Time Lump Sum</Text>
-              <InputField
-                label="Lump Sum Payment (applied now)"
-                value={pLump}
-                onChangeText={setPLump}
-                prefix="$"
-                accentColor={COLORS.amber}
-              />
-              <View style={styles.presetRow}>
-                {LUMP_PRESETS.map((amt) => (
-                  <TouchableOpacity
-                    key={amt}
-                    style={[styles.presetLump, num(pLump) === amt && styles.presetLumpActive]}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setPLump(String(amt));
-                    }}
-                  >
-                    <Text
-                      style={[styles.presetText, num(pLump) === amt && styles.presetLumpTextActive]}
+                <View style={styles.planDivider} />
+                <Text style={styles.planLabel}>One-Time Payment</Text>
+                <InputField
+                  label="Lump Sum Payment"
+                  value={pLump}
+                  onChangeText={setPLump}
+                  prefix="$"
+                  accentColor={COLORS.amber}
+                />
+                <View style={styles.presetRow}>
+                  {LUMP_PRESETS.map((amt) => (
+                    <TouchableOpacity
+                      key={amt}
+                      style={[styles.presetLump, num(pLump) === amt && styles.presetLumpActive]}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setPLump(String(amt));
+                      }}
                     >
-                      +${amt >= 1000 ? `${amt / 1000}k` : amt}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.hintRow}>
-                <Ionicons name="cash" size={15} color={COLORS.textMuted} />
-                <Text style={styles.hintText}>
-                  A lump sum is applied to your principal immediately — combine it with monthly
-                  extras to pay off your auto loan even faster.
-                </Text>
+                      <Text
+                        style={[
+                          styles.presetText,
+                          num(pLump) === amt && styles.presetLumpTextActive,
+                        ]}
+                      >
+                        +${amt >= 1000 ? `${amt / 1000}k` : amt}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.hintRow}>
+                  <Ionicons name="information-circle" size={15} color={COLORS.textMuted} />
+                  <Text style={styles.hintText}>
+                    Use either strategy—or combine both—to compare a faster payoff.
+                  </Text>
+                </View>
               </View>
 
+              <Text style={styles.sectionTitle}>Projected Impact</Text>
               {pHasAccel && pWith && pBase ? (
                 <>
                   <View style={styles.highlightCard}>
@@ -645,33 +693,46 @@ export default function CarScreen() {
                     </View>
                   ) : null}
 
-                  <View style={styles.statRow}>
-                    <StatCard
-                      label="New Payoff Time"
-                      value={`${pWith.months} mo`}
-                      icon="time"
-                      color={COLORS.teal}
-                      sub={`was ${pBase.months} mo`}
-                    />
-                    <View style={{ width: 12 }} />
-                    <StatCard
-                      label="Monthly Payment"
-                      value={fmtMoney(pWith.monthlyPayment)}
-                      icon="cash"
-                      color={COLORS.accent}
-                      sub={pExtraN > 0 ? `+${fmtMoney(pExtraN)}/mo` : 'same payment'}
-                    />
+                  <View style={styles.impactMetrics}>
+                    <View style={styles.impactMetric}>
+                      <View style={[styles.metricIcon, { backgroundColor: COLORS.teal + '22' }]}>
+                        <Ionicons name="time" size={20} color={COLORS.teal} />
+                      </View>
+                      <Text style={styles.impactValue}>{pWith.months} mo</Text>
+                      <Text style={styles.impactLabel}>New Payoff Time</Text>
+                      <Text style={[styles.impactSub, { color: COLORS.teal }]}>
+                        was {pBase.months} mo
+                      </Text>
+                    </View>
+                    <View style={styles.impactDivider} />
+                    <View style={styles.impactMetric}>
+                      <View style={[styles.metricIcon, { backgroundColor: COLORS.accent + '22' }]}>
+                        <Ionicons name="cash" size={20} color={COLORS.accent} />
+                      </View>
+                      <Text style={styles.impactValue}>{fmtMoney(pWith.monthlyPayment)}</Text>
+                      <Text style={styles.impactLabel}>New Monthly Payment</Text>
+                      <Text style={[styles.impactSub, { color: COLORS.accent }]}>
+                        {pExtraN > 0 ? `+${fmtMoney(pExtraN)}/mo` : 'same payment'}
+                      </Text>
+                    </View>
                   </View>
                   {pWith.schedule && pWith.schedule.length > 0 ? (
-                    <View style={styles.chartCard}>
-                      <Text style={styles.chartTitle}>Balance Over Time</Text>
-                      <BalanceLineChart
-                        schedule={pBase.schedule}
-                        compareSchedule={pWith.schedule}
-                        color={COLORS.accent}
-                        compareColor={COLORS.green}
-                      />
-                    </View>
+                    <>
+                      <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>
+                        Balance Projection
+                      </Text>
+                      <View style={styles.chartCard}>
+                        <Text style={styles.chartSub}>
+                          Compare the scheduled balance with your accelerated plan.
+                        </Text>
+                        <BalanceLineChart
+                          schedule={pBase.schedule}
+                          compareSchedule={pWith.schedule}
+                          color={COLORS.accent}
+                          compareColor={COLORS.green}
+                        />
+                      </View>
+                    </>
                   ) : null}
                 </>
               ) : !pValidationError ? (
@@ -686,46 +747,54 @@ export default function CarScreen() {
 
               {pBase && pWith ? (
                 <>
-                  {!saved ? (
-                    <NameField
-                      value={name}
-                      onChangeText={setName}
-                      placeholder="e.g. Pay Off Sedan Early"
-                    />
-                  ) : null}
-                  <TouchableOpacity
-                    style={[styles.saveBtn, saved && { backgroundColor: COLORS.green }]}
-                    activeOpacity={0.9}
-                    onPress={() =>
-                      save(
-                        {
-                          type: SCENARIO_TYPES.AUTO_PAYOFF,
-                          name: name.trim() || defaultName,
-                          balance: pBalN,
-                          originalLoan: pOriginalLoanN,
-                          rate: pRateN,
-                          originalTerm: pOriginalTermN,
-                          monthsRemaining: pMonthsN,
-                          extra: pExtraN,
-                          lump: pLumpN,
-                          monthlyPayment: pWith.monthlyPayment,
-                          payoffMonths: pWith.months,
-                          monthsSaved: pMonthsSaved,
-                          interestSaved: pInterestSaved,
-                          inputs: { pBalance, pRate, pOriginalTerm, pMonths, pExtra, pLump },
-                        },
-                        pValidationError,
-                      )
-                    }
-                    disabled={saved}
-                  >
-                    <Ionicons
-                      name={saved ? 'checkmark-circle' : 'bookmark'}
-                      size={18}
-                      color="#fff"
-                    />
-                    <Text style={styles.saveText}>{saved ? 'Saved' : 'Save Scenario'}</Text>
-                  </TouchableOpacity>
+                  <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>
+                    {saved ? 'Scenario Saved' : 'Save This Scenario for Later'}
+                  </Text>
+                  <View style={styles.actionCard}>
+                    {!saved ? (
+                      <NameField
+                        value={name}
+                        onChangeText={setName}
+                        onFocus={revealSaveField}
+                        placeholder="e.g. Pay Off Sedan Early"
+                      />
+                    ) : null}
+                    <TouchableOpacity
+                      style={[styles.saveBtn, saved && styles.savedBtn]}
+                      activeOpacity={0.9}
+                      onPress={() =>
+                        save(
+                          {
+                            type: SCENARIO_TYPES.AUTO_PAYOFF,
+                            name: name.trim() || defaultName,
+                            balance: pBalN,
+                            originalLoan: pOriginalLoanN,
+                            rate: pRateN,
+                            originalTerm: pOriginalTermN,
+                            monthsRemaining: pMonthsN,
+                            extra: pExtraN,
+                            lump: pLumpN,
+                            monthlyPayment: pWith.monthlyPayment,
+                            payoffMonths: pWith.months,
+                            monthsSaved: pMonthsSaved,
+                            interestSaved: pInterestSaved,
+                            inputs: { pBalance, pRate, pOriginalTerm, pMonths, pExtra, pLump },
+                          },
+                          pValidationError,
+                        )
+                      }
+                      disabled={saved}
+                    >
+                      <Ionicons
+                        name={saved ? 'checkmark-circle' : 'bookmark'}
+                        size={18}
+                        color="#fff"
+                      />
+                      <Text style={styles.saveText}>
+                        {saved ? 'Saved to your list' : 'Save Scenario'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </>
               ) : null}
             </>
@@ -735,82 +804,85 @@ export default function CarScreen() {
           {mode === 'refinance' ? (
             <>
               <Text style={styles.sectionTitle}>Current Auto Loan</Text>
+              <View style={styles.sectionCard}>
+                <InputField
+                  label="Original Loan Amount"
+                  value={rBalance}
+                  onChangeText={setRBalance}
+                  prefix="$"
+                />
 
-              <InputField
-                label="Original Loan Amount"
-                value={rBalance}
-                onChangeText={setRBalance}
-                prefix="$"
-              />
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="Current Rate"
+                      value={rCurRate}
+                      onChangeText={setRCurRate}
+                      suffix="%"
+                      accentColor={COLORS.red}
+                    />
+                  </View>
 
-              <View style={styles.rowInputs}>
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Current Rate"
-                    value={rCurRate}
-                    onChangeText={setRCurRate}
-                    suffix="%"
-                    accentColor={COLORS.red}
-                  />
+                  <View style={{ width: 12 }} />
+
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="Original Term"
+                      value={rOriginalTerm}
+                      onChangeText={setROriginalTerm}
+                      suffix="mo"
+                      accentColor={COLORS.purple}
+                    />
+                  </View>
                 </View>
 
-                <View style={{ width: 12 }} />
-
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="Original Term"
-                    value={rOriginalTerm}
-                    onChangeText={setROriginalTerm}
-                    suffix="mo"
-                    accentColor={COLORS.purple}
-                  />
-                </View>
+                <InputField
+                  label="Months Remaining"
+                  value={rMonths}
+                  onChangeText={setRMonths}
+                  suffix="mo"
+                  accentColor={COLORS.teal}
+                />
               </View>
-
-              <InputField
-                label="Months Remaining"
-                value={rMonths}
-                onChangeText={setRMonths}
-                suffix="mo"
-                accentColor={COLORS.teal}
-              />
 
               <Text style={styles.sectionTitle}>New Loan Offer</Text>
+              <View style={styles.sectionCard}>
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="New Rate"
+                      value={rNewRate}
+                      onChangeText={setRNewRate}
+                      suffix="%"
+                      accentColor={COLORS.green}
+                    />
+                  </View>
 
-              <View style={styles.rowInputs}>
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="New Rate"
-                    value={rNewRate}
-                    onChangeText={setRNewRate}
-                    suffix="%"
-                    accentColor={COLORS.green}
-                  />
+                  <View style={{ width: 12 }} />
+
+                  <View style={{ flex: 1 }}>
+                    <InputField
+                      label="New Term"
+                      value={rNewTerm}
+                      onChangeText={setRNewTerm}
+                      suffix="mo"
+                      accentColor={COLORS.purple}
+                    />
+                  </View>
                 </View>
 
-                <View style={{ width: 12 }} />
-
-                <View style={{ flex: 1 }}>
-                  <InputField
-                    label="New Term"
-                    value={rNewTerm}
-                    onChangeText={setRNewTerm}
-                    suffix="mo"
-                    accentColor={COLORS.purple}
-                  />
-                </View>
+                <InputField
+                  label="Refinance Fees"
+                  value={rFees}
+                  onChangeText={setRFees}
+                  prefix="$"
+                  accentColor={COLORS.amber}
+                />
               </View>
-
-              <InputField
-                label="Refinance Fees"
-                value={rFees}
-                onChangeText={setRFees}
-                prefix="$"
-                accentColor={COLORS.amber}
-              />
 
               {rBalN > 0 ? (
                 <>
+                  <Text style={styles.sectionTitle}>Refinance Analysis</Text>
                   <View
                     style={[
                       styles.verdict,
@@ -903,46 +975,58 @@ export default function CarScreen() {
                     />
                   </View>
 
-                  {!saved ? (
-                    <NameField value={name} onChangeText={setName} placeholder="e.g. Truck Refi" />
-                  ) : null}
+                  <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>
+                    {saved ? 'Analysis Saved' : 'Save This Analysis for Later'}
+                  </Text>
+                  <View style={styles.actionCard}>
+                    {!saved ? (
+                      <NameField
+                        value={name}
+                        onChangeText={setName}
+                        onFocus={revealSaveField}
+                        placeholder="e.g. Truck Refi"
+                      />
+                    ) : null}
 
-                  <TouchableOpacity
-                    style={[styles.saveBtn, saved && { backgroundColor: COLORS.green }]}
-                    activeOpacity={0.9}
-                    onPress={() =>
-                      save(
-                        {
-                          type: SCENARIO_TYPES.AUTO_REFINANCE,
-                          name: name.trim() || defaultName,
-                          balance: rBalN,
-                          curRate: rCurRateN,
-                          newRate: rNewRateN,
-                          monthlySavings: rMonthlySavings,
-                          netSavings: rLifetime,
-                          worthIt: rWorthIt,
-                          inputs: {
-                            rBalance,
-                            rCurRate,
-                            rOriginalTerm,
-                            rMonths,
-                            rNewRate,
-                            rNewTerm,
-                            rFees,
+                    <TouchableOpacity
+                      style={[styles.saveBtn, saved && styles.savedBtn]}
+                      activeOpacity={0.9}
+                      onPress={() =>
+                        save(
+                          {
+                            type: SCENARIO_TYPES.AUTO_REFINANCE,
+                            name: name.trim() || defaultName,
+                            balance: rBalN,
+                            curRate: rCurRateN,
+                            newRate: rNewRateN,
+                            monthlySavings: rMonthlySavings,
+                            netSavings: rLifetime,
+                            worthIt: rWorthIt,
+                            inputs: {
+                              rBalance,
+                              rCurRate,
+                              rOriginalTerm,
+                              rMonths,
+                              rNewRate,
+                              rNewTerm,
+                              rFees,
+                            },
                           },
-                        },
-                        rValidationError,
-                      )
-                    }
-                    disabled={saved}
-                  >
-                    <Ionicons
-                      name={saved ? 'checkmark-circle' : 'bookmark'}
-                      size={18}
-                      color="#fff"
-                    />
-                    <Text style={styles.saveText}>{saved ? 'Saved' : 'Save Analysis'}</Text>
-                  </TouchableOpacity>
+                          rValidationError,
+                        )
+                      }
+                      disabled={saved}
+                    >
+                      <Ionicons
+                        name={saved ? 'checkmark-circle' : 'bookmark'}
+                        size={18}
+                        color="#fff"
+                      />
+                      <Text style={styles.saveText}>
+                        {saved ? 'Saved to your list' : 'Save Analysis'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </>
               ) : null}
             </>
@@ -954,14 +1038,15 @@ export default function CarScreen() {
   );
 }
 
-function NameField({ value, onChangeText, placeholder }) {
+function NameField({ value, onChangeText, onFocus, placeholder }) {
   return (
-    <View style={styles.nameCard}>
-      <Text style={styles.nameLabel}>Name this estimate</Text>
+    <View style={styles.nameField}>
+      <Text style={styles.nameLabel}>Name</Text>
       <TextInput
         style={styles.nameInput}
         value={value}
         onChangeText={onChangeText}
+        onFocus={onFocus}
         placeholder={placeholder}
         placeholderTextColor={COLORS.textMuted}
       />
@@ -981,16 +1066,25 @@ function MetricRow({ label, value, color, last }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   scroll: { padding: 20, paddingBottom: 40 },
-  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 20,
+    backgroundColor: COLORS.card,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 4,
+  },
   modeBtn: {
     flex: 1,
     flexDirection: 'row',
     gap: 6,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceElevated,
+    height: 44,
+    borderRadius: 11,
+    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -998,23 +1092,23 @@ const styles = StyleSheet.create({
   modeText: { color: COLORS.textSecondary, fontWeight: '700', fontSize: 13 },
   modeTextActive: { color: '#fff' },
   previewCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 20,
-    padding: 22,
+    backgroundColor: '#17243A',
+    borderRadius: 18,
+    padding: 20,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 24,
+    borderColor: COLORS.accent + '55',
+    marginBottom: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 4,
   },
-  previewLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
+  previewLabel: { color: '#9EC9F5', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   previewValue: {
-    color: COLORS.accent,
-    fontSize: 44,
+    color: '#fff',
+    fontSize: 40,
     fontWeight: '900',
     marginVertical: 6,
     letterSpacing: -1,
@@ -1025,9 +1119,25 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 17,
     fontWeight: '800',
-    marginTop: 8,
-    marginBottom: 14,
+    marginTop: 7,
+    marginBottom: 11,
   },
+  laterSectionTitle: { marginTop: 24 },
+  sectionCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  planLabel: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '800', marginBottom: 12 },
+  planDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 20 },
   label: {
     color: COLORS.textSecondary,
     fontSize: 13,
@@ -1040,8 +1150,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-start',
-    marginTop: -4,
-    marginBottom: 8,
+    marginTop: -2,
     paddingHorizontal: 2,
   },
   hintText: { color: COLORS.textMuted, fontSize: 12, flex: 1, fontWeight: '500', lineHeight: 17 },
@@ -1086,6 +1195,28 @@ const styles = StyleSheet.create({
   presetTextActive: { color: '#062' },
   presetLumpTextActive: { color: '#4a3200' },
   statRow: { flexDirection: 'row', marginTop: 16 },
+  impactMetrics: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 16,
+    marginTop: 16,
+  },
+  impactMetric: { flex: 1 },
+  metricIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 11,
+  },
+  impactDivider: { width: 1, backgroundColor: COLORS.border, marginHorizontal: 16 },
+  impactValue: { color: COLORS.textPrimary, fontSize: 20, fontWeight: '800' },
+  impactLabel: { color: COLORS.textMuted, fontSize: 12, fontWeight: '600', marginTop: 4 },
+  impactSub: { fontSize: 12, fontWeight: '700', marginTop: 6 },
   metricsCard: {
     backgroundColor: COLORS.card,
     borderRadius: 18,
@@ -1104,7 +1235,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.green + '18',
     borderRadius: 18,
     padding: 20,
-    marginTop: 20,
     borderWidth: 1,
     borderColor: COLORS.green + '44',
   },
@@ -1133,18 +1263,22 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderRadius: 18,
     padding: 20,
-    marginTop: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  chartTitle: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '800', marginBottom: 8 },
+  chartSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 17,
+    marginBottom: 14,
+  },
   emptyHint: {
     flexDirection: 'row',
     gap: 12,
     backgroundColor: COLORS.amber + '15',
     borderRadius: 16,
     padding: 18,
-    marginTop: 20,
     alignItems: 'center',
   },
   emptyText: {
@@ -1159,7 +1293,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 18,
     padding: 20,
-    marginTop: 22,
     borderWidth: 1,
   },
   verdictTitle: { fontSize: 16, fontWeight: '800' },
@@ -1185,17 +1318,18 @@ const styles = StyleSheet.create({
   },
   comparePay: { fontSize: 24, fontWeight: '900', marginVertical: 4 },
   compareRate: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600' },
-  nameCard: {
+  actionCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 20,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: 16,
+    borderColor: COLORS.accent + '55',
+    marginBottom: 16,
   },
+  nameField: {},
   nameLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', marginBottom: 8 },
   nameInput: {
-    backgroundColor: COLORS.surfaceElevated,
+    backgroundColor: COLORS.accent,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -1205,6 +1339,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  savedBtn: { backgroundColor: COLORS.green, marginTop: 0 },
   saveBtn: {
     flexDirection: 'row',
     gap: 8,

@@ -1,5 +1,5 @@
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -15,6 +15,7 @@ import RefinanceScreen from './screens/RefinanceScreen';
 import CarScreen from './screens/CarScreen';
 import SavedScreen from './screens/SavedScreen';
 import ResultScreen from './screens/ResultScreen';
+import StartupSplash from './components/StartupSplash';
 
 const Tab = createBottomTabNavigator();
 const EstimatorStack = createStackNavigator();
@@ -29,6 +30,9 @@ function EstimatorStackNavigator() {
 }
 
 export default function App() {
+  const [showStartupSplash, setShowStartupSplash] = useState(true);
+  const finishStartupSplash = useCallback(() => setShowStartupSplash(false), []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -68,6 +72,7 @@ export default function App() {
             <Tab.Screen name="Saved" component={SavedScreen} />
           </Tab.Navigator>
         </NavigationContainer>
+        {showStartupSplash ? <StartupSplash onFinish={finishStartupSplash} /> : null}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

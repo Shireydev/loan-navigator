@@ -65,31 +65,23 @@ const AUTO_TOOLS = [
 function ToolCard({ tool, onPress }) {
   return (
     <TouchableOpacity style={styles.tool} activeOpacity={0.78} onPress={onPress}>
-      <LinearGradient
-        colors={[tool.color + '1F', tool.color + '08']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+      <View
         style={[
           styles.toolIcon,
           {
-            borderColor: tool.color + '38',
+            backgroundColor: tool.color + '14',
+            borderColor: tool.color + '30',
           },
         ]}
       >
-        <Ionicons name={tool.icon} size={25} color={tool.color} />
-      </LinearGradient>
+        <Ionicons name={tool.icon} size={23} color={tool.color} />
+      </View>
 
       <Text style={styles.toolTitle}>{tool.title}</Text>
 
       <Text style={styles.toolDescription} numberOfLines={1}>
         {tool.description}
       </Text>
-
-      <View style={styles.toolFooter}>
-        <Text style={[styles.openText, { color: tool.color }]}>Open</Text>
-
-        <Ionicons name="arrow-forward" size={13} color={tool.color} />
-      </View>
     </TouchableOpacity>
   );
 }
@@ -203,27 +195,6 @@ export default function LandingScreen() {
               </Text>
 
               <Text style={styles.heroSub}>Powerful tools to help you finance what matters.</Text>
-
-              <View style={styles.heroFeatures}>
-                <View style={styles.heroFeature}>
-                  <Ionicons name="checkmark-circle" size={15} color="#7FC2FF" />
-                  <Text style={styles.heroFeatureText}>Mortgage</Text>
-                </View>
-
-                <View style={styles.heroFeatureDivider} />
-
-                <View style={styles.heroFeature}>
-                  <Ionicons name="checkmark-circle" size={15} color="#7FC2FF" />
-                  <Text style={styles.heroFeatureText}>Auto</Text>
-                </View>
-
-                <View style={styles.heroFeatureDivider} />
-
-                <View style={styles.heroFeature}>
-                  <Ionicons name="checkmark-circle" size={15} color="#7FC2FF" />
-                  <Text style={styles.heroFeatureText}>Refinance</Text>
-                </View>
-              </View>
             </View>
 
             <LinearGradient
@@ -261,36 +232,30 @@ export default function LandingScreen() {
 
         {/* ---------------- TRUST MESSAGE ---------------- */}
 
-        <View style={styles.trustCard}>
-          <LinearGradient
-            colors={['rgba(48,126,229,0.12)', 'rgba(17,43,82,0.18)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.trustGradient}
-          >
-            <View style={styles.trustIcon}>
-              <Ionicons name="shield-checkmark-outline" size={20} color="#6FB5FF" />
-            </View>
+        <View style={styles.trustArea}>
+          <View style={styles.trustCard}>
+            <LinearGradient
+              colors={['rgba(48,126,229,0.12)', 'rgba(17,43,82,0.18)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.trustGradient}
+            >
+              <View style={styles.trustIcon}>
+                <Ionicons name="shield-checkmark-outline" size={20} color="#6FB5FF" />
+              </View>
 
-            <View style={styles.trustContent}>
-              <Text style={styles.trustTitle}>Plan with confidence</Text>
+              <View style={styles.trustContent}>
+                <Text style={styles.trustTitle}>Plan with confidence</Text>
 
-              <Text style={styles.trustText}>
-                Smart estimates designed to help you make informed financial decisions.
-              </Text>
-            </View>
-          </LinearGradient>
+                <Text style={styles.trustText}>
+                  Smart estimates designed to help you make informed financial decisions.
+                </Text>
+              </View>
+            </LinearGradient>
+          </View>
         </View>
 
-        <View style={styles.footer}>
-          <View style={styles.footerLine} />
-
-          <Text style={styles.footerText}>Smart decisions today. More freedom tomorrow.</Text>
-
-          <View style={styles.footerLine} />
-        </View>
-
-        <View style={{ height: 24 }} />
+        <View style={{ height: 12 }} />
       </ScrollView>
     </View>
   );
@@ -305,6 +270,7 @@ const styles = StyleSheet.create({
   },
 
   scroll: {
+    flexGrow: 1,
     paddingBottom: 20,
   },
 
@@ -326,11 +292,11 @@ const styles = StyleSheet.create({
   },
 
   hero: {
-    minHeight: 242,
+    minHeight: 184,
     borderRadius: 28,
     paddingHorizontal: 22,
-    paddingTop: 22,
-    paddingBottom: 24,
+    paddingTop: 18,
+    paddingBottom: 18,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(129,190,255,0.25)',
@@ -344,13 +310,13 @@ const styles = StyleSheet.create({
   heroBrandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 17,
+    marginBottom: 11,
   },
 
   heroBrandIcon: {
-    width: 25,
-    height: 25,
-    borderRadius: 9,
+    width: 23,
+    height: 23,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(91,169,255,0.13)',
@@ -368,10 +334,10 @@ const styles = StyleSheet.create({
 
   heroTitle: {
     color: '#FFFFFF',
-    fontSize: 29,
+    fontSize: 28,
     fontWeight: '900',
     letterSpacing: -0.9,
-    lineHeight: 35,
+    lineHeight: 33,
   },
 
   heroTitleAccent: {
@@ -380,51 +346,19 @@ const styles = StyleSheet.create({
 
   heroSub: {
     color: 'rgba(233,243,255,0.82)',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
-    lineHeight: 20,
-    marginTop: 12,
-    maxWidth: 255,
-  },
-
-  heroFeatures: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 19,
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(4,18,42,0.30)',
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: 'rgba(132,195,255,0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-
-  heroFeature: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  heroFeatureText: {
-    color: 'rgba(237,246,255,0.9)',
-    fontSize: 10,
-    fontWeight: '700',
-    marginLeft: 4,
-  },
-
-  heroFeatureDivider: {
-    height: 13,
-    width: 1,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    marginHorizontal: 8,
+    lineHeight: 19,
+    marginTop: 9,
+    maxWidth: 245,
   },
 
   heroLogo: {
     position: 'absolute',
     right: -18,
-    top: 31,
-    width: 148,
-    height: 148,
+    top: 23,
+    width: 140,
+    height: 140,
     opacity: 0.23,
     borderRadius: 34,
     zIndex: 2,
@@ -499,19 +433,19 @@ const styles = StyleSheet.create({
 
   section: {
     paddingHorizontal: 18,
-    marginTop: 27,
+    marginTop: 20,
   },
 
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 11,
   },
 
   sectionIcon: {
-    width: 29,
-    height: 29,
-    borderRadius: 10,
+    width: 27,
+    height: 27,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -542,12 +476,12 @@ const styles = StyleSheet.create({
 
   tool: {
     flex: 1,
-    minHeight: 176,
+    minHeight: 150,
     backgroundColor: COLORS.card,
     borderRadius: 18,
-    paddingTop: 17,
-    paddingBottom: 14,
-    paddingHorizontal: 10,
+    paddingTop: 14,
+    paddingBottom: 13,
+    paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: 'rgba(123,153,196,0.20)',
     alignItems: 'center',
@@ -562,13 +496,13 @@ const styles = StyleSheet.create({
   },
 
   toolIcon: {
-    width: 49,
-    height: 49,
-    borderRadius: 15,
+    width: 44,
+    height: 44,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    marginBottom: 12,
+    marginBottom: 11,
   },
 
   toolTitle: {
@@ -576,37 +510,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     textAlign: 'center',
-    lineHeight: 17,
-    minHeight: 34,
+    lineHeight: 16,
+    minHeight: 32,
   },
 
   toolDescription: {
     color: COLORS.textMuted,
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '600',
     textAlign: 'center',
-    marginTop: 7,
-  },
-
-  toolFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 'auto',
-    paddingTop: 11,
-  },
-
-  openText: {
-    fontSize: 10,
-    fontWeight: '800',
-    marginRight: 4,
+    marginTop: 6,
   },
 
   /* ---------------- TRUST CARD ---------------- */
 
+  trustArea: {
+    marginTop: 'auto',
+    paddingTop: 32,
+  },
+
   trustCard: {
     marginHorizontal: 18,
-    marginTop: 26,
-    borderRadius: 18,
+    borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(99,167,240,0.16)',
@@ -615,20 +540,20 @@ const styles = StyleSheet.create({
   trustGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 17,
-    paddingVertical: 15,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
   },
 
   trustIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(80,160,255,0.10)',
     borderWidth: 1,
     borderColor: 'rgba(101,179,255,0.20)',
-    marginRight: 13,
+    marginRight: 12,
   },
 
   trustContent: {
@@ -644,32 +569,8 @@ const styles = StyleSheet.create({
 
   trustText: {
     color: COLORS.textMuted,
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '500',
-    lineHeight: 16,
-  },
-
-  /* ---------------- FOOTER ---------------- */
-
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 25,
-    paddingHorizontal: 27,
-  },
-
-  footerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-    opacity: 0.6,
-  },
-
-  footerText: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginHorizontal: 12,
+    lineHeight: 15,
   },
 });

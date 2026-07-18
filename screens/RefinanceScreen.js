@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,7 @@ import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
 export default function RefinanceScreen() {
   const route = useRoute();
   const navigation = useNavigation();
+  const scrollRef = useRef(null);
   const [balance, setBalance] = useState('360000');
   const [curRate, setCurRate] = useState('7.25');
   const [origYears, setOrigYears] = useState('30');
@@ -223,193 +224,211 @@ export default function RefinanceScreen() {
     }
   };
 
+  const revealSaveField = useCallback(() => {
+    const scrollToSave = () => scrollRef.current?.scrollToEnd({ animated: true });
+    requestAnimationFrame(scrollToSave);
+    setTimeout(scrollToSave, 280);
+  }, []);
+
   return (
     <View style={styles.container}>
       <GradientHeader
         title="Refinance Analyzer"
-        subtitle="Should you refinance?"
-        icon="swap-horizontal"
+        subtitle="Compare the cost of a new mortgage"
+        icon="home-outline"
+        variant="financial"
+        onIconPress={() => navigation.navigate('Home')}
+        iconAccessibilityLabel="Return to home"
       />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
           <ValidationBanner message={validationError} />
           <Text style={styles.sectionTitle}>Current Mortgage</Text>
-          <InputField
-            label="Remaining Balance"
-            value={balance}
-            onChangeText={setBalance}
-            prefix="$"
-          />
-          <View style={styles.rowInputs}>
-            <View style={{ flex: 1 }}>
-              <InputField
-                label="Current Rate"
-                value={curRate}
-                onChangeText={setCurRate}
-                suffix="%"
-                accentColor={COLORS.red}
-              />
+          <View style={styles.sectionCard}>
+            <InputField
+              label="Remaining Balance"
+              value={balance}
+              onChangeText={setBalance}
+              prefix="$"
+            />
+            <View style={styles.rowInputs}>
+              <View style={{ flex: 1 }}>
+                <InputField
+                  label="Current Rate"
+                  value={curRate}
+                  onChangeText={setCurRate}
+                  suffix="%"
+                  accentColor={COLORS.red}
+                />
+              </View>
+              <View style={{ width: 12 }} />
+              <View style={{ flex: 1 }}>
+                <InputField
+                  label="Original Term"
+                  value={origYears}
+                  onChangeText={setOrigYears}
+                  suffix="yr"
+                  accentColor={COLORS.pink}
+                />
+              </View>
             </View>
-            <View style={{ width: 12 }} />
-            <View style={{ flex: 1 }}>
-              <InputField
-                label="Original Term"
-                value={origYears}
-                onChangeText={setOrigYears}
-                suffix="yr"
-                accentColor={COLORS.pink}
-              />
+            <InputField
+              label="Years Left"
+              value={curYears}
+              onChangeText={setCurYears}
+              suffix="yr"
+              accentColor={COLORS.teal}
+            />
+            <View style={styles.hintRow}>
+              <Ionicons name="information-circle" size={15} color={COLORS.textMuted} />
+              <Text style={styles.hintText}>
+                We rebuild the remaining amortization schedule from your original loan terms.
+              </Text>
             </View>
-          </View>
-          <InputField
-            label="Years Left"
-            value={curYears}
-            onChangeText={setCurYears}
-            suffix="yr"
-            accentColor={COLORS.teal}
-          />
-          <View style={styles.hintRow}>
-            <Ionicons name="information-circle" size={15} color={COLORS.textMuted} />
-            <Text style={styles.hintText}>
-              Original term lets us rebuild your true amortization schedule so the interest
-              comparison is accurate.
-            </Text>
           </View>
 
           <Text style={styles.sectionTitle}>New Loan Offer</Text>
-          <View style={styles.rowInputs}>
-            <View style={{ flex: 1 }}>
-              <InputField
-                label="New Rate"
-                value={newRate}
-                onChangeText={setNewRate}
-                suffix="%"
-                accentColor={COLORS.green}
-              />
-            </View>
-            <View style={{ width: 12 }} />
-            <View style={{ flex: 1 }}>
-              <InputField
-                label="New Term"
-                value={newTerm}
-                onChangeText={setNewTerm}
-                suffix="yr"
-                accentColor={COLORS.purple}
-              />
-            </View>
-          </View>
-          <InputField
-            label="Closing Costs"
-            value={costs}
-            onChangeText={setCosts}
-            prefix="$"
-            accentColor={COLORS.amber}
-          />
-
-          {/* ---------------- OPTIONAL: ZIP CLOSING COST ESTIMATOR ---------------- */}
-          <View style={styles.zipCard}>
-            <View style={styles.zipHead}>
-              <View style={[styles.zipIcon, { backgroundColor: COLORS.teal + '22' }]}>
-                <Ionicons name="location" size={18} color={COLORS.teal} />
-              </View>
+          <View style={styles.sectionCard}>
+            <View style={styles.rowInputs}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.zipTitle}>
-                  Estimate closing costs by ZIP <Text style={styles.optional}>(optional)</Text>
-                </Text>
-                <Text style={styles.zipSub}>
-                  Enter your ZIP and we'll estimate the closing costs for your new refinance loan
-                  using local, county and state fee data.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.zipInputRow}>
-              <View style={styles.zipInputWrap}>
-                <Ionicons
-                  name="pin"
-                  size={16}
-                  color={COLORS.textMuted}
-                  style={{ marginRight: 8 }}
-                />
-                <TextInput
-                  style={styles.zipInput}
-                  value={zip}
-                  onChangeText={(t) => setZip(t.replace(/[^0-9]/g, '').slice(0, 5))}
-                  placeholder="e.g. 78701"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="number-pad"
-                  maxLength={5}
+                <InputField
+                  label="New Rate"
+                  value={newRate}
+                  onChangeText={setNewRate}
+                  suffix="%"
+                  accentColor={COLORS.green}
                 />
               </View>
-              <TouchableOpacity
-                style={[styles.zipBtn, zipLoading && { opacity: 0.7 }]}
-                activeOpacity={0.9}
-                onPress={lookupZip}
-                disabled={zipLoading}
-              >
-                {zipLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="search" size={16} color="#fff" />
-                    <Text style={styles.zipBtnText}>Look up</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {zipError ? (
-              <View style={styles.zipErrorRow}>
-                <Ionicons name="alert-circle" size={15} color={COLORS.red} />
-                <Text style={styles.zipErrorText}>{zipError}</Text>
+              <View style={{ width: 12 }} />
+              <View style={{ flex: 1 }}>
+                <InputField
+                  label="New Term"
+                  value={newTerm}
+                  onChangeText={setNewTerm}
+                  suffix="yr"
+                  accentColor={COLORS.purple}
+                />
               </View>
-            ) : null}
+            </View>
+            <InputField
+              label="Closing Costs"
+              value={costs}
+              onChangeText={setCosts}
+              prefix="$"
+              accentColor={COLORS.amber}
+            />
 
-            {zipInfo ? (
-              <View style={styles.zipResult}>
-                <View style={styles.zipResultHead}>
-                  <Ionicons name="checkmark-circle" size={16} color={COLORS.green} />
-                  <Text style={styles.zipResultPlace}>
-                    {zipInfo.city}
-                    {zipInfo.countyDisplay ? ` · ${zipInfo.countyDisplay}` : ''}
-                    {`, ${zipInfo.stateCode}`}
+            {/* ---------------- OPTIONAL: ZIP CLOSING COST ESTIMATOR ---------------- */}
+            <View style={styles.zipCard}>
+              <View style={styles.zipHead}>
+                <View style={[styles.zipIcon, { backgroundColor: COLORS.teal + '22' }]}>
+                  <Ionicons name="location" size={18} color={COLORS.teal} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.zipTitle}>
+                    Estimate closing costs by ZIP <Text style={styles.optional}>(optional)</Text>
+                  </Text>
+                  <Text style={styles.zipSub}>
+                    Enter your ZIP and we'll estimate the closing costs for your new refinance loan
+                    using local, county and state fee data.
                   </Text>
                 </View>
+              </View>
 
-                <View style={styles.closingCard}>
-                  <View style={styles.closingHead}>
-                    <View style={[styles.closingIcon, { backgroundColor: COLORS.purple + '22' }]}>
-                      <Ionicons name="document-text" size={16} color={COLORS.purple} />
-                    </View>
-                    <Text style={styles.closingLabel}>Est. Refinance Closing Costs</Text>
-                    <Text style={[styles.closingValue, { color: COLORS.purple }]}>
-                      {fmtMoney(estRefiClosing)}
+              <View style={styles.zipInputRow}>
+                <View style={styles.zipInputWrap}>
+                  <Ionicons
+                    name="pin"
+                    size={16}
+                    color={COLORS.textMuted}
+                    style={{ marginRight: 8 }}
+                  />
+                  <TextInput
+                    style={styles.zipInput}
+                    value={zip}
+                    onChangeText={(t) => setZip(t.replace(/[^0-9]/g, '').slice(0, 5))}
+                    placeholder="e.g. 78701"
+                    placeholderTextColor={COLORS.textMuted}
+                    keyboardType="number-pad"
+                    maxLength={5}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[styles.zipBtn, zipLoading && { opacity: 0.7 }]}
+                  activeOpacity={0.9}
+                  onPress={lookupZip}
+                  disabled={zipLoading}
+                >
+                  {zipLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="search" size={16} color="#fff" />
+                      <Text style={styles.zipBtnText}>Look up</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {zipError ? (
+                <View style={styles.zipErrorRow}>
+                  <Ionicons name="alert-circle" size={15} color={COLORS.red} />
+                  <Text style={styles.zipErrorText}>{zipError}</Text>
+                </View>
+              ) : null}
+
+              {zipInfo ? (
+                <View style={styles.zipResult}>
+                  <View style={styles.zipResultHead}>
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.green} />
+                    <Text style={styles.zipResultPlace}>
+                      {zipInfo.city}
+                      {zipInfo.countyDisplay ? ` · ${zipInfo.countyDisplay}` : ''}
+                      {`, ${zipInfo.stateCode}`}
                     </Text>
                   </View>
-                  <Text style={styles.closingNote}>
-                    ~{(refiClosingRate * refiTermAdj).toFixed(1)}% of your {fmtMoney(balN)} balance
-                    · based on {zipInfo.state} refinance fees, {newTermN}yr new term. Refinances
-                    typically avoid transfer taxes, so costs run lower than a purchase.
+
+                  <View style={styles.closingCard}>
+                    <View style={styles.closingHead}>
+                      <View style={[styles.closingIcon, { backgroundColor: COLORS.purple + '22' }]}>
+                        <Ionicons name="document-text" size={16} color={COLORS.purple} />
+                      </View>
+                      <Text style={styles.closingLabel}>Est. Refinance Closing Costs</Text>
+                      <Text style={[styles.closingValue, { color: COLORS.purple }]}>
+                        {fmtMoney(estRefiClosing)}
+                      </Text>
+                    </View>
+                    <Text style={styles.closingNote}>
+                      ~{(refiClosingRate * refiTermAdj).toFixed(1)}% of your {fmtMoney(balN)}{' '}
+                      balance · based on {zipInfo.state} refinance fees, {newTermN}yr new term.
+                      Refinances typically avoid transfer taxes, so costs run lower than a purchase.
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.applyBtn}
+                    activeOpacity={0.9}
+                    onPress={applyEstimatedClosing}
+                  >
+                    <Ionicons name="download" size={16} color="#fff" />
+                    <Text style={styles.applyText}>Use this as my closing costs</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.zipDisclaimer}>
+                    Estimate blends local, county and {zipInfo.state} state fee data. Actual lender
+                    quotes vary — you can override the value above.
                   </Text>
                 </View>
-
-                <TouchableOpacity
-                  style={styles.applyBtn}
-                  activeOpacity={0.9}
-                  onPress={applyEstimatedClosing}
-                >
-                  <Ionicons name="download" size={16} color="#fff" />
-                  <Text style={styles.applyText}>Use this as my closing costs</Text>
-                </TouchableOpacity>
-                <Text style={styles.zipDisclaimer}>
-                  Estimate blends local, county and {zipInfo.state} state fee data. Actual lender
-                  quotes vary — you can override the value above.
-                </Text>
-              </View>
-            ) : null}
+              ) : null}
+            </View>
           </View>
 
           <TouchableOpacity style={styles.analyzeBtn} activeOpacity={0.9} onPress={analyze}>
@@ -419,6 +438,9 @@ export default function RefinanceScreen() {
 
           {analyzed && !validationError ? (
             <>
+              <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>
+                Refinance Analysis
+              </Text>
               <View
                 style={[
                   styles.verdict,
@@ -542,28 +564,37 @@ export default function RefinanceScreen() {
                 />
               </View>
 
-              {!saved ? (
-                <View style={styles.nameCard}>
-                  <Text style={styles.nameLabel}>Name this analysis</Text>
-                  <TextInput
-                    style={styles.nameInput}
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="e.g. Oak Ave Refi"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
-                </View>
-              ) : null}
+              <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>
+                {saved ? 'Analysis Saved' : 'Save This Analysis for Later'}
+              </Text>
+              <View style={styles.actionCard}>
+                {!saved ? (
+                  <View>
+                    <Text style={styles.nameLabel}>Analysis name</Text>
+                    <TextInput
+                      style={styles.nameInput}
+                      value={name}
+                      onChangeText={setName}
+                      onFocus={revealSaveField}
+                      placeholder="e.g. Oak Ave Refi"
+                      placeholderTextColor={COLORS.textMuted}
+                    />
+                  </View>
+                ) : null}
 
-              <TouchableOpacity
-                style={[styles.saveBtn, saved && { backgroundColor: COLORS.green }]}
-                activeOpacity={0.9}
-                onPress={saveAnalysis}
-                disabled={saved}
-              >
-                <Ionicons name={saved ? 'checkmark-circle' : 'bookmark'} size={18} color="#fff" />
-                <Text style={styles.saveText}>{saved ? 'Saved' : 'Save Analysis'}</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.saveBtn, saved && styles.savedBtn]}
+                  activeOpacity={0.9}
+                  onPress={saveAnalysis}
+                  disabled={saved}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name={saved ? 'checkmark-circle' : 'bookmark'} size={18} color="#fff" />
+                  <Text style={styles.saveText}>
+                    {saved ? 'Saved to your list' : 'Save Analysis'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </>
           ) : null}
           <View style={{ height: 24 }} />
@@ -589,8 +620,22 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 17,
     fontWeight: '800',
-    marginBottom: 14,
-    marginTop: 4,
+    marginBottom: 11,
+    marginTop: 7,
+  },
+  laterSectionTitle: { marginTop: 24 },
+  sectionCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   optional: { color: COLORS.textMuted, fontSize: 12, fontWeight: '600' },
   rowInputs: { flexDirection: 'row' },
@@ -598,19 +643,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-start',
-    marginTop: -4,
-    marginBottom: 8,
+    marginTop: -2,
     paddingHorizontal: 2,
   },
   hintText: { color: COLORS.textMuted, fontSize: 12, flex: 1, fontWeight: '500', lineHeight: 17 },
   zipCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 18,
-    padding: 18,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    padding: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
     marginTop: 4,
-    marginBottom: 20,
   },
   zipHead: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   zipIcon: {
@@ -721,7 +764,8 @@ const styles = StyleSheet.create({
     height: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 4,
+    marginBottom: 4,
     shadowColor: COLORS.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
@@ -734,7 +778,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 18,
     padding: 20,
-    marginTop: 22,
     borderWidth: 1,
   },
   verdictTitle: { fontSize: 17, fontWeight: '800' },
@@ -801,17 +844,17 @@ const styles = StyleSheet.create({
   metricBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
   metricLabel: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
   metricValue: { fontSize: 16, fontWeight: '800' },
-  nameCard: {
+  actionCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 20,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: 16,
+    borderColor: COLORS.accent + '55',
+    marginBottom: 16,
   },
   nameLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', marginBottom: 8 },
   nameInput: {
-    backgroundColor: COLORS.surfaceElevated,
+    backgroundColor: COLORS.accent,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -821,6 +864,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  savedBtn: { backgroundColor: COLORS.green, marginTop: 0 },
   saveBtn: {
     flexDirection: 'row',
     gap: 8,
