@@ -1,2 +1,21 @@
 .expo/
 node_modules/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Generated builds and reports
+Builds/
+*.aab
+*.apk
+*.ipa
+dist/
+web-build/
+coverage/
+
+# Tooling and operating-system noise
+*.log
+.DS_Store
+Thumbs.db

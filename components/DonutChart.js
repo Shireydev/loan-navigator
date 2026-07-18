@@ -15,8 +15,9 @@ const TICKS = 160; // resolution of the ring
 const TICK_W = 5;
 const TICK_H = THICKNESS;
 
-export default function DonutChart({ segments, centerValue, centerLabel }) {
+export default function DonutChart({ segments, centerValue, centerLabel, animateChanges = true }) {
   const progress = useRef(new Animated.Value(0)).current;
+  const hasAnimated = useRef(false);
 
   const active = segments.filter((s) => s.value > 0);
   const total = active.reduce((s, seg) => s + seg.value, 0) || 1;
@@ -24,14 +25,28 @@ export default function DonutChart({ segments, centerValue, centerLabel }) {
   const sig = segments.map((s) => Math.round(s.value)).join('|');
 
   useEffect(() => {
+    progress.stopAnimation();
+
+    // Interactive charts can update many times during a drag. Keep the
+    // entrance animation, but update subsequent values immediately when
+    // animateChanges is disabled so animations do not pile up on the bridge.
+    if (hasAnimated.current && !animateChanges) {
+      progress.setValue(1);
+      return undefined;
+    }
+
+    hasAnimated.current = true;
     progress.setValue(0);
-    Animated.timing(progress, {
+    const animation = Animated.timing(progress, {
       toValue: 1,
       duration: 1000,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
-    }).start();
-  }, [sig]);
+    });
+    animation.start();
+
+    return () => animation.stop();
+  }, [sig, animateChanges, progress]);
 
   // Precompute segment boundaries (in tick space) so we can insert a gap of a
   // couple ticks between each colored arc.
@@ -74,10 +89,7 @@ export default function DonutChart({ segments, centerValue, centerLabel }) {
                 styles.tickWrap,
                 {
                   opacity,
-                  transform: [
-                    { rotate: `${angle}deg` },
-                    { translateY: -(RADIUS - THICKNESS / 2) },
-                  ],
+                  transform: [{ rotate: `${angle}deg` }, { translateY: -(RADIUS - THICKNESS / 2) }],
                 },
               ]}
             >
@@ -124,5 +136,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   centerValue: { color: COLORS.textPrimary, fontSize: 34, fontWeight: '900', letterSpacing: -0.5 },
-  centerLabel: { color: COLORS.textMuted, fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginTop: 2 },
+  centerLabel: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginTop: 2,
+  },
 });

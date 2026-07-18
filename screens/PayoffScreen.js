@@ -1,15 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 
 import GradientHeader from '../components/GradientHeader';
-import InputField from '../components/InputField';
+import InputField, { ValidationBanner } from '../components/InputField';
 import StatCard from '../components/StatCard';
 import BalanceLineChart from '../components/BalanceLineChart';
-import { COLORS, monthlyPI, amortize, amortizeWithPayment, fmtMoney, formatInputWithCommas } from '../theme';
+import {
+  COLORS,
+  monthlyPI,
+  amortize,
+  amortizeWithPayment,
+  fmtMoney,
+  formatInputWithCommas,
+  parseLoanNumber,
+  remainingBalanceFromOriginal,
+  validatePayoffScenario,
+} from '../theme';
+import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
 
 const PRESETS = [50, 100, 200, 500];
 const LUMP_PRESETS = [5000, 10000, 25000, 50000];
@@ -18,40 +38,75 @@ const LUMP_PRESETS = [5000, 10000, 25000, 50000];
 // many years remain, compute the current remaining balance. This lets us build
 // an accurate amortization schedule from the borrower's true position — the
 // remaining balance is derived rather than guessed.
-function remainingBalance(origLoan, annualRatePct, origYears, yearsLeft) {
-  const r = annualRatePct / 100 / 12;
-  const origMonths = Math.max(Math.round(origYears * 12), 1);
-  const monthsLeft = Math.max(Math.min(Math.round(yearsLeft * 12), origMonths), 1);
-  const monthsElapsed = origMonths - monthsLeft;
-  const payment = monthlyPI(origLoan, annualRatePct, origYears);
-
-  if (r === 0) {
-    return Math.max(origLoan - payment * monthsElapsed, 0);
-  }
-  // Standard remaining-balance formula after `monthsElapsed` payments.
-  const bal = origLoan * Math.pow(1 + r, monthsElapsed)
-    - payment * ((Math.pow(1 + r, monthsElapsed) - 1) / r);
-  return Math.max(bal, 0);
-}
-
 export default function PayoffScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
   const [origLoan, setOrigLoan] = useState(formatInputWithCommas('400000'));
   const [rate, setRate] = useState('6.75');
   const [origYears, setOrigYears] = useState('30');
   const [yearsLeft, setYearsLeft] = useState('27');
   const [extra, setExtra] = useState('200');
   const [lump, setLump] = useState('0');
+  const [name, setName] = useState('');
+  const [saved, setSaved] = useState(false);
 
-  const num = (v) => parseFloat(String(v).replace(/[^0-9.]/g, '')) || 0;
-  const origLoanN = num(origLoan);
-  const rateN = num(rate);
-  const origYearsN = num(origYears) || 30;
-  const yearsLeftN = Math.min(num(yearsLeft) || origYearsN, origYearsN);
-  const extraN = num(extra);
-  const lumpN = num(lump);
+  // Restore a saved mortgage payoff scenario from the Saved tab.
+  useEffect(() => {
+    const item = route.params?.restore;
+    if (!item || item.type !== SCENARIO_TYPES.MORTGAGE_PAYOFF || !item.inputs) return;
+
+    const i = item.inputs;
+    setOrigLoan(i.origLoan ?? formatInputWithCommas('400000'));
+    setRate(i.rate ?? '6.75');
+    setOrigYears(i.origYears ?? '30');
+    setYearsLeft(i.yearsLeft ?? '27');
+    setExtra(i.extra ?? '200');
+    setLump(i.lump ?? '0');
+    setName(item.name || '');
+    setSaved(false);
+    navigation.setParams({ restore: undefined });
+  }, [navigation, route.params?.restore, route.params?.ts]);
+
+  // Allow each changed combination to be saved as a separate scenario.
+  useEffect(() => {
+    setSaved(false);
+  }, [origLoan, rate, origYears, yearsLeft, extra, lump]);
+
+  const origLoanN = parseLoanNumber(origLoan);
+  const rateN = parseLoanNumber(rate);
+  const origYearsN = parseLoanNumber(origYears);
+  const yearsLeftN = parseLoanNumber(yearsLeft);
+  const extraN = parseLoanNumber(extra);
+  const lumpN = parseLoanNumber(lump);
+
+  const baseValidationError = validatePayoffScenario({
+    originalLoan: origLoanN,
+    rate: rateN,
+    originalTerm: origYearsN,
+    remainingTerm: yearsLeftN,
+    extra: extraN,
+    lump: lumpN,
+    termLabel: 'term',
+    maxTerm: 50,
+  });
 
   // Derive the current remaining balance from the original loan trajectory.
-  const balN = origLoanN > 0 ? remainingBalance(origLoanN, rateN, origYearsN, yearsLeftN) : 0;
+  const balN = !baseValidationError
+    ? remainingBalanceFromOriginal(origLoanN, rateN, origYearsN * 12, yearsLeftN * 12)
+    : 0;
+  const validationError =
+    baseValidationError ||
+    validatePayoffScenario({
+      originalLoan: origLoanN,
+      rate: rateN,
+      originalTerm: origYearsN,
+      remainingTerm: yearsLeftN,
+      extra: extraN,
+      lump: lumpN,
+      currentBalance: balN,
+      termLabel: 'term',
+      maxTerm: 50,
+    });
 
   // The regular scheduled monthly payment for the remaining balance over the
   // years that are actually left. This is the payment the borrower keeps
@@ -60,7 +115,7 @@ export default function PayoffScreen() {
 
   // Apply the one-time lump sum immediately against the balance for the
   // accelerated scenario. The lump reduces the starting principal.
-  const balAfterLump = Math.max(balN - lumpN, 0);
+  const balAfterLump = validationError ? 0 : Math.max(balN - lumpN, 0);
 
   // Baseline: remaining balance amortized over years left, no extras/lump.
   const base = balN > 0 ? amortize(balN, rateN, yearsLeftN, 0) : null;
@@ -70,11 +125,12 @@ export default function PayoffScreen() {
   // Because the balance is lower, the same payment kills the loan faster — so
   // the payoff time genuinely drops. This is the correct behaviour for a
   // one-time lump sum payment.
-  const withExtra = balN > 0
-    ? (balAfterLump <= 0
+  const withExtra =
+    balN > 0
+      ? balAfterLump <= 0
         ? { months: 0, totalInterest: 0, monthlyPayment: 0, schedule: [{ year: 0, balance: 0 }] }
-        : amortizeWithPayment(balAfterLump, rateN, scheduledPayment + extraN))
-    : null;
+        : amortizeWithPayment(balAfterLump, rateN, scheduledPayment + extraN)
+      : null;
 
   const hasAccel = (extraN > 0 || lumpN > 0) && balN > 0;
 
@@ -93,6 +149,43 @@ export default function PayoffScreen() {
     setLump(String(amt));
   };
 
+  const saveScenario = async () => {
+    if (validationError || !base || !withExtra) {
+      Alert.alert('Check Your Inputs', validationError || 'Enter a valid payoff scenario.');
+      return;
+    }
+
+    try {
+      await addSavedScenario({
+        type: SCENARIO_TYPES.MORTGAGE_PAYOFF,
+        name: name.trim() || 'Mortgage Payoff',
+        inputs: { origLoan, rate, origYears, yearsLeft, extra, lump },
+        results: {
+          balance: balN,
+          originalLoan: origLoanN,
+          rate: rateN,
+          originalTerm: origYearsN,
+          yearsRemaining: yearsLeftN,
+          extra: extraN,
+          lump: lumpN,
+          monthlyPayment: withExtra.monthlyPayment,
+          payoffMonths: withExtra.months,
+          monthsSaved,
+          interestSaved,
+        },
+      });
+      setSaved(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Unable to save mortgage payoff scenario:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        'Unable to Save',
+        'Your mortgage payoff scenario could not be saved. Please try again.',
+      );
+    }
+  };
+
   return (
     <View style={styles.container}>
       <GradientHeader
@@ -105,16 +198,40 @@ export default function PayoffScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <ValidationBanner message={validationError} />
           <Text style={styles.sectionTitle}>Your Original Loan</Text>
-          <InputField label="Original Loan Amount" value={origLoan} onChangeText={setOrigLoan} prefix="$" />
-          <InputField label="Interest Rate" value={rate} onChangeText={setRate} suffix="%" accentColor={COLORS.purple} />
+          <InputField
+            label="Original Loan Amount"
+            value={origLoan}
+            onChangeText={setOrigLoan}
+            prefix="$"
+          />
+          <InputField
+            label="Interest Rate"
+            value={rate}
+            onChangeText={setRate}
+            suffix="%"
+            accentColor={COLORS.purple}
+          />
           <View style={styles.rowInputs}>
             <View style={{ flex: 1 }}>
-              <InputField label="Original Term" value={origYears} onChangeText={setOrigYears} suffix="yr" accentColor={COLORS.pink} />
+              <InputField
+                label="Original Term"
+                value={origYears}
+                onChangeText={setOrigYears}
+                suffix="yr"
+                accentColor={COLORS.pink}
+              />
             </View>
             <View style={{ width: 12 }} />
             <View style={{ flex: 1 }}>
-              <InputField label="Years Remaining" value={yearsLeft} onChangeText={setYearsLeft} suffix="yr" accentColor={COLORS.teal} />
+              <InputField
+                label="Years Remaining"
+                value={yearsLeft}
+                onChangeText={setYearsLeft}
+                suffix="yr"
+                accentColor={COLORS.teal}
+              />
             </View>
           </View>
 
@@ -127,7 +244,8 @@ export default function PayoffScreen() {
                 <Text style={styles.derivedLabel}>Current Remaining Balance</Text>
                 <Text style={styles.derivedValue}>{fmtMoney(balN)}</Text>
                 <Text style={styles.derivedSub}>
-                  After {(origYearsN - yearsLeftN).toFixed(0)} yr of payments · {yearsLeftN.toFixed(0)} yr left
+                  After {(origYearsN - yearsLeftN).toFixed(0)} yr of payments ·{' '}
+                  {yearsLeftN.toFixed(0)} yr left
                 </Text>
               </View>
             </View>
@@ -142,31 +260,45 @@ export default function PayoffScreen() {
           </View>
 
           <Text style={styles.sectionTitle}>Extra Monthly Payment</Text>
-          <InputField label="Additional Principal / mo" value={extra} onChangeText={setExtra} prefix="$" accentColor={COLORS.green} />
+          <InputField
+            label="Additional Principal / mo"
+            value={extra}
+            onChangeText={setExtra}
+            prefix="$"
+            accentColor={COLORS.green}
+          />
           <View style={styles.presetRow}>
             {PRESETS.map((amt) => (
               <TouchableOpacity
                 key={amt}
-                style={[styles.preset, num(extra) === amt && styles.presetActive]}
+                style={[styles.preset, extraN === amt && styles.presetActive]}
                 activeOpacity={0.8}
                 onPress={() => applyPreset(amt)}
               >
-                <Text style={[styles.presetText, num(extra) === amt && styles.presetTextActive]}>+${amt}</Text>
+                <Text style={[styles.presetText, extraN === amt && styles.presetTextActive]}>
+                  +${amt}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
 
           <Text style={styles.sectionTitle}>One-Time Lump Sum</Text>
-          <InputField label="Lump Sum Payment (applied now)" value={lump} onChangeText={setLump} prefix="$" accentColor={COLORS.amber} />
+          <InputField
+            label="Lump Sum Payment (applied now)"
+            value={lump}
+            onChangeText={setLump}
+            prefix="$"
+            accentColor={COLORS.amber}
+          />
           <View style={styles.presetRow}>
             {LUMP_PRESETS.map((amt) => (
               <TouchableOpacity
                 key={amt}
-                style={[styles.presetLump, num(lump) === amt && styles.presetLumpActive]}
+                style={[styles.presetLump, lumpN === amt && styles.presetLumpActive]}
                 activeOpacity={0.8}
                 onPress={() => applyLumpPreset(amt)}
               >
-                <Text style={[styles.presetText, num(lump) === amt && styles.presetLumpTextActive]}>
+                <Text style={[styles.presetText, lumpN === amt && styles.presetLumpTextActive]}>
                   +${amt >= 1000 ? `${amt / 1000}k` : amt}
                 </Text>
               </TouchableOpacity>
@@ -198,7 +330,8 @@ export default function PayoffScreen() {
                 <View style={styles.lumpBanner}>
                   <Ionicons name="flash" size={18} color={COLORS.amber} />
                   <Text style={styles.lumpBannerText}>
-                    Your {fmtMoney(lumpN)} lump sum drops the balance to {fmtMoney(balAfterLump)} right away.
+                    Your {fmtMoney(lumpN)} lump sum drops the balance to {fmtMoney(balAfterLump)}{' '}
+                    right away.
                   </Text>
                 </View>
               ) : null}
@@ -229,7 +362,9 @@ export default function PayoffScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.chartTitle}>Balance Over Time</Text>
-                      <Text style={styles.chartSub}>How extra & lump payments shrink your balance faster.</Text>
+                      <Text style={styles.chartSub}>
+                        How extra & lump payments shrink your balance faster.
+                      </Text>
                     </View>
                   </View>
 
@@ -245,7 +380,8 @@ export default function PayoffScreen() {
                       <Ionicons name="checkmark-circle" size={18} color={COLORS.green} />
                       <Text style={styles.savingsBannerText}>
                         Paid off {yearsSaved > 0 ? `${yearsSaved} yr ` : ''}
-                        {remMonths > 0 ? `${remMonths} mo ` : ''}sooner · save {fmtMoney(interestSaved)} in interest
+                        {remMonths > 0 ? `${remMonths} mo ` : ''}sooner · save{' '}
+                        {fmtMoney(interestSaved)} in interest
                       </Text>
                     </View>
                   ) : null}
@@ -256,10 +392,32 @@ export default function PayoffScreen() {
             <View style={styles.emptyHint}>
               <Ionicons name="bulb" size={22} color={COLORS.amber} />
               <Text style={styles.emptyText}>
-                Add an extra monthly amount or a one-time lump sum above to see how much interest and time you'll save.
+                Add an extra monthly amount or a one-time lump sum above to see how much interest
+                and time you'll save.
               </Text>
             </View>
           )}
+
+          {base && withExtra ? (
+            <>
+              {!saved ? (
+                <NameField
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="e.g. Pay Off Home Early"
+                />
+              ) : null}
+              <TouchableOpacity
+                style={[styles.saveBtn, saved && { backgroundColor: COLORS.green }]}
+                activeOpacity={0.9}
+                onPress={saveScenario}
+                disabled={saved}
+              >
+                <Ionicons name={saved ? 'checkmark-circle' : 'bookmark'} size={18} color="#fff" />
+                <Text style={styles.saveText}>{saved ? 'Saved' : 'Save Scenario'}</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
           <View style={{ height: 24 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -267,10 +425,31 @@ export default function PayoffScreen() {
   );
 }
 
+function NameField({ value, onChangeText, placeholder }) {
+  return (
+    <View style={styles.nameCard}>
+      <Text style={styles.nameLabel}>Name this scenario</Text>
+      <TextInput
+        style={styles.nameInput}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={COLORS.textMuted}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   scroll: { padding: 20, paddingBottom: 40 },
-  sectionTitle: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '800', marginBottom: 14, marginTop: 4 },
+  sectionTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 14,
+    marginTop: 4,
+  },
   rowInputs: { flexDirection: 'row' },
   derivedCard: {
     flexDirection: 'row',
@@ -284,12 +463,21 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   derivedIcon: {
-    width: 40, height: 40, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 14,
   },
   derivedLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  derivedValue: { color: COLORS.textPrimary, fontSize: 24, fontWeight: '900', marginVertical: 2, letterSpacing: -0.5 },
+  derivedValue: {
+    color: COLORS.textPrimary,
+    fontSize: 24,
+    fontWeight: '900',
+    marginVertical: 2,
+    letterSpacing: -0.5,
+  },
   derivedSub: { color: COLORS.textMuted, fontSize: 12, fontWeight: '500' },
   hintRow: {
     flexDirection: 'row',
@@ -350,7 +538,13 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 14,
   },
-  lumpBannerText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', flex: 1, lineHeight: 18 },
+  lumpBannerText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 18,
+  },
   statRow: { flexDirection: 'row', marginTop: 16 },
   chartCard: {
     backgroundColor: COLORS.card,
@@ -362,9 +556,12 @@ const styles = StyleSheet.create({
   },
   chartHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18 },
   chartBadge: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: COLORS.accent,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chartTitle: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '800' },
   chartSub: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500', marginTop: 2 },
@@ -390,5 +587,42 @@ const styles = StyleSheet.create({
     marginTop: 20,
     alignItems: 'center',
   },
-  emptyText: { color: COLORS.textSecondary, fontSize: 14, flex: 1, fontWeight: '500', lineHeight: 20 },
+  emptyText: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    flex: 1,
+    fontWeight: '500',
+    lineHeight: 20,
+  },
+  nameCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: 16,
+  },
+  nameLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  nameInput: {
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    height: 50,
+    paddingHorizontal: 14,
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveBtn: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 14,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  saveText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

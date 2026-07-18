@@ -1,17 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
   PanResponder,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import DonutChart from '../components/DonutChart';
-import { COLORS, STORAGE_KEYS, amortize, monthlyPI, fmtMoney } from '../theme';
+import { COLORS, amortize, monthlyPI, fmtMoney } from '../theme';
+import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
 
 function Row({ label, value, color = COLORS.textPrimary, bold }) {
   return (
@@ -87,16 +93,19 @@ export default function ResultScreen({ route }) {
   const p = route.params;
   const [name, setName] = useState(p.presetName || '');
 
-  const am = useMemo(() => amortize(p.loanAmount, p.rate, p.term, 0), [p.loanAmount, p.rate, p.term]);
+  const am = useMemo(
+    () => amortize(p.loanAmount, p.rate, p.term, 0),
+    [p.loanAmount, p.rate, p.term],
+  );
   const yearData = useMemo(
     () => buildYearBreakdown(p.loanAmount, p.rate, p.term),
-    [p.loanAmount, p.rate, p.term]
+    [p.loanAmount, p.rate, p.term],
   );
 
   // When PMI applies, figure out exactly when it will be removed.
   const pmiRemovalMo = useMemo(
     () => (p.pmi > 0 ? pmiRemovalMonth(p.loanAmount, p.rate, p.term, p.price) : null),
-    [p.pmi, p.loanAmount, p.rate, p.term, p.price]
+    [p.pmi, p.loanAmount, p.rate, p.term, p.price],
   );
   const pmiRemovalText = useMemo(() => {
     if (pmiRemovalMo == null) return null;
@@ -112,18 +121,21 @@ export default function ResultScreen({ route }) {
   const [trackW, setTrackW] = useState(0);
   const maxIdx = Math.max(yearData.length - 1, 0);
   const cur = yearData[Math.min(yearIdx, maxIdx)] || {
-    principal: p.monthlyPI, interest: 0, year: 1, balance: p.loanAmount,
+    principal: p.monthlyPI,
+    interest: 0,
+    year: 1,
+    balance: p.loanAmount,
   };
 
-  const setIdxFromX = (x) => {
-    if (trackW <= 0 || maxIdx === 0) return;
-    const ratio = Math.max(0, Math.min(1, x / trackW));
-    const idx = Math.round(ratio * maxIdx);
-    setYearIdx((prev) => {
-      if (prev !== idx) Haptics.selectionAsync();
-      return idx;
-    });
-  };
+  const setIdxFromX = useCallback(
+    (x) => {
+      if (trackW <= 0 || maxIdx === 0) return;
+      const ratio = Math.max(0, Math.min(1, x / trackW));
+      const idx = Math.round(ratio * maxIdx);
+      setYearIdx(idx);
+    },
+    [trackW, maxIdx],
+  );
 
   const panResponder = useMemo(
     () =>
@@ -132,8 +144,9 @@ export default function ResultScreen({ route }) {
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (e) => setIdxFromX(e.nativeEvent.locationX),
         onPanResponderMove: (e) => setIdxFromX(e.nativeEvent.locationX),
+        onPanResponderRelease: () => Haptics.selectionAsync(),
       }),
-    [trackW, maxIdx]
+    [setIdxFromX],
   );
 
   const thumbLeft = maxIdx > 0 ? (yearIdx / maxIdx) * trackW : 0;
@@ -152,9 +165,13 @@ export default function ResultScreen({ route }) {
     { label: 'Interest', value: cur.interest, color: COLORS.amber },
     { label: 'Principal', value: cur.principal, color: COLORS.accent },
     { label: 'Property Tax', value: p.tax, color: COLORS.green },
-    ...(curPmi > 0 ? [{ label: 'Mortgage Insurance', value: curPmi, color: COLORS.red }] : []),
     { label: 'Home Insurance', value: p.insurance, color: '#178A3D' },
     ...(p.hoa > 0 ? [{ label: 'HOA Dues', value: p.hoa, color: COLORS.purple }] : []),
+    // Keep this row mounted after PMI is removed so the breakdown card does
+    // not change height while the user is dragging the year slider.
+    ...(p.pmi > 0
+      ? [{ label: 'Private Mortgage Insurance', value: curPmi, color: COLORS.red }]
+      : []),
   ];
 
   // Total for THIS year's payment breakdown.
@@ -162,28 +179,28 @@ export default function ResultScreen({ route }) {
   const maxSeg = Math.max(...donutSegments.map((s) => s.value), 1);
 
   const saveEstimate = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.SAVED);
-      const list = raw ? JSON.parse(raw) : [];
-      const entry = {
-        id: Date.now().toString(),
-        type: 'purchase',
+      await addSavedScenario({
+        type: SCENARIO_TYPES.HOME_PURCHASE,
         name: name.trim() || 'Home Purchase',
-        date: new Date().toISOString(),
-        price: p.price,
-        loanAmount: p.loanAmount,
-        rate: p.rate,
-        term: p.term,
-        monthly: p.total,
-        totalInterest: am.totalInterest,
-        closingCosts: p.closingCosts,
         inputs: p.inputs,
-      };
-      list.unshift(entry);
-      await AsyncStorage.setItem(STORAGE_KEYS.SAVED, JSON.stringify(list));
+        results: {
+          price: p.price,
+          loanAmount: p.loanAmount,
+          rate: p.rate,
+          term: p.term,
+          monthly: p.total,
+          totalInterest: am.totalInterest,
+          closingCosts: p.closingCosts,
+        },
+      });
       setSaved(true);
-    } catch (e) {}
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Unable to save mortgage estimate:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Unable to Save', 'Your mortgage estimate could not be saved. Please try again.');
+    }
   };
 
   return (
@@ -212,6 +229,7 @@ export default function ResultScreen({ route }) {
             segments={donutSegments}
             centerValue={fmtMoney(pieTotal)}
             centerLabel="PER MONTH"
+            animateChanges={false}
           />
 
           {/* Reference-style legend: colored progress bar + label + amount */}
@@ -238,7 +256,9 @@ export default function ResultScreen({ route }) {
           <View style={styles.sliderHeader}>
             <Text style={styles.sliderLabel}>Loan Year</Text>
             <View style={styles.yearBadge}>
-              <Text style={styles.yearBadgeText}>Year {cur.year} of {p.term}</Text>
+              <Text style={styles.yearBadgeText}>
+                Year {cur.year} of {p.term}
+              </Text>
             </View>
           </View>
           <View
@@ -258,7 +278,12 @@ export default function ResultScreen({ route }) {
           </View>
 
           {p.pmi > 0 ? (
-            <View style={[styles.pmiNote, { backgroundColor: (pmiActive ? COLORS.red : COLORS.green) + '14' }]}>
+            <View
+              style={[
+                styles.pmiNote,
+                { backgroundColor: (pmiActive ? COLORS.red : COLORS.green) + '14' },
+              ]}
+            >
               <Ionicons
                 name={pmiActive ? 'shield' : 'shield-checkmark'}
                 size={16}
@@ -283,13 +308,19 @@ export default function ResultScreen({ route }) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Loan Summary</Text>
           <Row label="Home Price" value={fmtMoney(p.price)} />
-          <Row label="Down Payment" value={`${fmtMoney(p.down)} (${p.downPct.toFixed(0)}%)`} color={COLORS.green} />
+          <Row
+            label="Down Payment"
+            value={`${fmtMoney(p.down)} (${p.downPct.toFixed(0)}%)`}
+            color={COLORS.green}
+          />
           <Row label="Loan Amount" value={fmtMoney(p.loanAmount)} />
           <Row label="Interest Rate" value={`${p.rate.toFixed(2)}%`} color={COLORS.purple} />
           <Row label="Term" value={`${p.term} years`} />
           {p.closingCosts > 0 ? (
             <Row
-              label={p.closingState ? `Est. Closing Costs (${p.closingState})` : 'Est. Closing Costs'}
+              label={
+                p.closingState ? `Est. Closing Costs (${p.closingState})` : 'Est. Closing Costs'
+              }
               value={fmtMoney(p.closingCosts)}
               color={COLORS.purple}
             />
@@ -312,20 +343,31 @@ export default function ResultScreen({ route }) {
             <View style={styles.closingRow}>
               <Ionicons name="document-text" size={18} color={COLORS.purple} />
               <Text style={styles.closingText}>
-                Approximate one-time closing costs{p.closingState ? ` for ${p.closingState}` : ''}, estimated
-                from your home price, {p.term}-year term, and {p.downPct.toFixed(0)}% down payment. Includes
-                lender, title, and typical government fees. Actual costs vary by lender.
+                Approximate one-time closing costs{p.closingState ? ` for ${p.closingState}` : ''},
+                estimated from your home price, {p.term}-year term, and {p.downPct.toFixed(0)}% down
+                payment. Includes lender, title, and typical government fees. Actual costs vary by
+                lender.
               </Text>
             </View>
             <View style={styles.closingBreak}>
-              <Row label="Cash to Close (est.)" value={fmtMoney(p.down + p.closingCosts)} color={COLORS.accent} bold />
+              <Row
+                label="Cash to Close (est.)"
+                value={fmtMoney(p.down + p.closingCosts)}
+                color={COLORS.accent}
+                bold
+              />
             </View>
           </View>
         ) : null}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Over the Life of the Loan</Text>
-          <Row label="Total Interest Paid" value={fmtMoney(am.totalInterest)} color={COLORS.red} bold />
+          <Row
+            label="Total Interest Paid"
+            value={fmtMoney(am.totalInterest)}
+            color={COLORS.red}
+            bold
+          />
           <Row label="Total of Payments" value={fmtMoney(am.totalPaid)} bold />
           <View style={styles.interestBanner}>
             <Ionicons name="alert-circle" size={18} color={COLORS.amber} />
@@ -391,9 +433,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
   bigValue: { color: '#fff', fontSize: 46, fontWeight: '900', letterSpacing: -1 },
@@ -453,7 +498,8 @@ const styles = StyleSheet.create({
   },
   sliderTrackBg: {
     position: 'absolute',
-    left: 0, right: 0,
+    left: 0,
+    right: 0,
     height: 6,
     borderRadius: 3,
     backgroundColor: COLORS.surfaceElevated,
@@ -489,7 +535,13 @@ const styles = StyleSheet.create({
     padding: 12,
     marginTop: 16,
   },
-  pmiNoteText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', flex: 1, lineHeight: 18 },
+  pmiNoteText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 18,
+  },
   balanceNote: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -501,11 +553,29 @@ const styles = StyleSheet.create({
   },
   balanceNoteText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', flex: 1 },
   row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
-  rowLabel: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600', flex: 1, marginRight: 12 },
+  rowLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 12,
+  },
   rowValue: { fontSize: 15, fontWeight: '700' },
-  closingBig: { color: COLORS.purple, fontSize: 32, fontWeight: '900', letterSpacing: -0.5, marginBottom: 14 },
+  closingBig: {
+    color: COLORS.purple,
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    marginBottom: 14,
+  },
   closingRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  closingText: { color: COLORS.textSecondary, fontSize: 13, flex: 1, fontWeight: '500', lineHeight: 19 },
+  closingText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    flex: 1,
+    fontWeight: '500',
+    lineHeight: 19,
+  },
   closingBreak: {
     marginTop: 16,
     paddingTop: 14,
@@ -521,7 +591,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignItems: 'flex-start',
   },
-  interestText: { color: COLORS.textSecondary, fontSize: 13, flex: 1, fontWeight: '500', lineHeight: 19 },
+  interestText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    flex: 1,
+    fontWeight: '500',
+    lineHeight: 19,
+  },
   nameCard: {
     backgroundColor: COLORS.card,
     borderRadius: 16,

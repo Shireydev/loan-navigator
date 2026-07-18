@@ -30,18 +30,13 @@ export const STORAGE_KEYS = {
 
 export function fmtMoney(n, decimals = 0) {
   if (n === null || n === undefined || isNaN(n)) return '$0';
-  return '$' + Number(n).toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-
-export function fmtNum(n, decimals = 0) {
-  if (n === null || n === undefined || isNaN(n)) return '0';
-  return Number(n).toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
+  return (
+    '$' +
+    Number(n).toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })
+  );
 }
 
 // Format a raw numeric-input string with thousands separators while the user
@@ -69,14 +64,206 @@ export function formatInputWithCommas(raw) {
   // (e.g. "0.5").
   intPart = intPart.replace(/^0+(?=\d)/, '');
 
-  const intFormatted = intPart === ''
-    ? (hasDot ? '0' : '')
-    : Number(intPart).toLocaleString('en-US');
+  const intFormatted =
+    intPart === '' ? (hasDot ? '0' : '') : Number(intPart).toLocaleString('en-US');
 
   if (hasDot) {
     return `${intFormatted}.${decPart}`;
   }
   return intFormatted;
+}
+
+// Parse a user-entered financial value without silently accepting malformed
+// input such as multiple decimal points or unsupported characters.
+export function parseLoanNumber(value) {
+  const normalized = String(value ?? '')
+    .trim()
+    .replace(/[$,%\s,]/g, '');
+
+  if (!/^(?:\d+\.?\d*|\.\d+)$/.test(normalized)) return NaN;
+
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : NaN;
+}
+
+function rangeError(label, value, { min = 0, max = Infinity, allowZero = true } = {}) {
+  if (!Number.isFinite(value)) return `${label} must be a valid number.`;
+  if ((!allowZero && value <= min) || (allowZero && value < min)) {
+    return `${label} must be ${allowZero ? 'at least' : 'greater than'} ${min}.`;
+  }
+  if (value > max) return `${label} must not exceed ${max}.`;
+  return null;
+}
+
+export function validateMortgageEstimate({
+  price,
+  down,
+  rate,
+  termYears,
+  propertyTax = 0,
+  insurance = 0,
+  hoa = 0,
+}) {
+  return (
+    rangeError('Home price', price, { min: 0, allowZero: false }) ||
+    rangeError('Down payment', down) ||
+    (down >= price ? 'Down payment must be less than the home price.' : null) ||
+    rangeError('Interest rate', rate, { min: 0, max: 25 }) ||
+    rangeError('Loan term', termYears, { min: 1, max: 50 }) ||
+    rangeError('Property tax', propertyTax) ||
+    rangeError('Homeowners insurance', insurance) ||
+    rangeError('HOA dues', hoa)
+  );
+}
+
+export function validatePayoffScenario({
+  originalLoan,
+  rate,
+  originalTerm,
+  remainingTerm,
+  extra = 0,
+  lump = 0,
+  currentBalance,
+  termLabel = 'term',
+  maxTerm = 50,
+  wholeTerms = false,
+}) {
+  return (
+    rangeError('Original loan amount', originalLoan, { min: 0, allowZero: false }) ||
+    rangeError('Interest rate', rate, { min: 0, max: 50 }) ||
+    rangeError(`Original ${termLabel}`, originalTerm, { min: 1, max: maxTerm }) ||
+    rangeError(`Remaining ${termLabel}`, remainingTerm, {
+      min: 0,
+      max: maxTerm,
+      allowZero: false,
+    }) ||
+    (wholeTerms && (!Number.isInteger(originalTerm) || !Number.isInteger(remainingTerm))
+      ? `${termLabel[0].toUpperCase() + termLabel.slice(1)} must be whole numbers.`
+      : null) ||
+    (remainingTerm > originalTerm
+      ? `Remaining ${termLabel} cannot exceed the original ${termLabel}.`
+      : null) ||
+    rangeError('Additional monthly principal', extra) ||
+    rangeError('Lump-sum payment', lump) ||
+    (Number.isFinite(currentBalance) && lump > currentBalance
+      ? 'Lump-sum payment cannot exceed the current balance.'
+      : null)
+  );
+}
+
+export function validateRefinanceScenario({
+  balance,
+  currentRate,
+  originalTerm,
+  remainingTerm,
+  newRate,
+  newTerm,
+  costs = 0,
+  termLabel = 'term',
+  maxTerm = 50,
+  wholeTerms = false,
+}) {
+  return (
+    rangeError('Loan balance', balance, { min: 0, allowZero: false }) ||
+    rangeError('Current interest rate', currentRate, { min: 0, max: 50 }) ||
+    rangeError(`Original ${termLabel}`, originalTerm, { min: 1, max: maxTerm }) ||
+    rangeError(`Remaining ${termLabel}`, remainingTerm, {
+      min: 0,
+      max: maxTerm,
+      allowZero: false,
+    }) ||
+    (remainingTerm > originalTerm
+      ? `Remaining ${termLabel} cannot exceed the original ${termLabel}.`
+      : null) ||
+    rangeError('New interest rate', newRate, { min: 0, max: 50 }) ||
+    rangeError(`New ${termLabel}`, newTerm, { min: 1, max: maxTerm }) ||
+    (wholeTerms &&
+    (!Number.isInteger(originalTerm) ||
+      !Number.isInteger(remainingTerm) ||
+      !Number.isInteger(newTerm))
+      ? `${termLabel[0].toUpperCase() + termLabel.slice(1)} must be whole numbers.`
+      : null) ||
+    rangeError('Refinance costs', costs)
+  );
+}
+
+export function validateAutoPurchase({ price, down, trade, salesTax, rate, termMonths }) {
+  const taxableAmount = Math.max(price - trade, 0);
+  const maximumDown = taxableAmount * (1 + salesTax / 100);
+
+  return (
+    rangeError('Vehicle price', price, { min: 0, allowZero: false }) ||
+    rangeError('Down payment', down) ||
+    rangeError('Trade-in value', trade) ||
+    (trade > price ? 'Trade-in value cannot exceed the vehicle price.' : null) ||
+    rangeError('Sales-tax rate', salesTax, { min: 0, max: 20 }) ||
+    (down >= maximumDown ? 'Down payment must be less than the amount due.' : null) ||
+    rangeError('Interest rate', rate, { min: 0, max: 50 }) ||
+    rangeError('Loan term', termMonths, { min: 1, max: 120 }) ||
+    (!Number.isInteger(termMonths) ? 'Loan term must be a whole number of months.' : null)
+  );
+}
+
+// Reconstruct the remaining principal from an original amortization schedule.
+// Terms are expressed in months so the same function supports home and auto loans.
+export function remainingBalanceFromOriginal(
+  originalLoan,
+  annualRatePct,
+  originalTermMonths,
+  monthsRemaining,
+) {
+  const origMonths = Math.max(Math.round(originalTermMonths), 1);
+  const monthsLeft = Math.max(Math.min(Math.round(monthsRemaining), origMonths), 1);
+  const monthsElapsed = origMonths - monthsLeft;
+  const monthlyRate = annualRatePct / 100 / 12;
+  const payment = monthlyPI(originalLoan, annualRatePct, origMonths / 12);
+
+  if (monthlyRate === 0) {
+    return Math.max(originalLoan - payment * monthsElapsed, 0);
+  }
+
+  const balance =
+    originalLoan * Math.pow(1 + monthlyRate, monthsElapsed) -
+    payment * ((Math.pow(1 + monthlyRate, monthsElapsed) - 1) / monthlyRate);
+  return Math.max(balance, 0);
+}
+
+// Recover the original principal/payment when the user supplies a current
+// remaining balance and position within the original amortization schedule.
+export function originalLoanFromRemainingBalance(
+  remainingBalance,
+  annualRatePct,
+  originalTermMonths,
+  monthsRemaining,
+) {
+  const monthlyRate = annualRatePct / 100 / 12;
+  const origMonths = Math.max(Math.round(originalTermMonths), 1);
+  const monthsLeft = Math.max(Math.min(Math.round(monthsRemaining), origMonths), 1);
+  const monthsElapsed = origMonths - monthsLeft;
+
+  if (monthlyRate === 0) {
+    const originalPrincipal = (remainingBalance * origMonths) / monthsLeft;
+    return {
+      originalPrincipal,
+      payment: originalPrincipal / origMonths,
+      monthsLeft,
+      originalMonths: origMonths,
+      monthsElapsed,
+    };
+  }
+
+  const fullGrowth = Math.pow(1 + monthlyRate, origMonths);
+  const elapsedGrowth = Math.pow(1 + monthlyRate, monthsElapsed);
+  const factor = (fullGrowth - elapsedGrowth) / (fullGrowth - 1);
+  const originalPrincipal = factor > 0 ? remainingBalance / factor : remainingBalance;
+
+  return {
+    originalPrincipal,
+    payment: monthlyPI(originalPrincipal, annualRatePct, origMonths / 12),
+    monthsLeft,
+    originalMonths: origMonths,
+    monthsElapsed,
+  };
 }
 
 // Core mortgage math -------------------------------------------------

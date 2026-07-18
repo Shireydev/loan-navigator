@@ -1,20 +1,58 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import GradientHeader from '../components/GradientHeader';
-import { COLORS, STORAGE_KEYS, fmtMoney } from '../theme';
+import { COLORS, fmtMoney } from '../theme';
+import { readSavedScenarios, SCENARIO_TYPES, writeSavedScenarios } from '../savedScenarios';
 
 const TYPE_META = {
-  purchase: { label: 'Home Purchase', icon: 'home', color: COLORS.accent, tab: 'Estimate' },
-  refinance: { label: 'Home Refinance', icon: 'swap-horizontal', color: COLORS.purple, tab: 'Refinance' },
-  car_purchase: { label: 'Car Purchase', icon: 'car-sport', color: COLORS.teal, tab: 'Auto' },
-  car_refinance: { label: 'Car Refinance', icon: 'car', color: COLORS.pink, tab: 'Auto' },
+  [SCENARIO_TYPES.HOME_PURCHASE]: {
+    label: 'Home Purchase',
+    icon: 'home',
+    color: COLORS.accent,
+    tab: 'Estimate',
+  },
+  [SCENARIO_TYPES.MORTGAGE_PAYOFF]: {
+    label: 'Mortgage Payoff',
+    icon: 'trending-down',
+    color: COLORS.green,
+    tab: 'Payoff',
+  },
+  [SCENARIO_TYPES.HOME_REFINANCE]: {
+    label: 'Home Refinance',
+    icon: 'swap-horizontal',
+    color: COLORS.purple,
+    tab: 'Refinance',
+  },
+  [SCENARIO_TYPES.AUTO_PURCHASE]: {
+    label: 'Car Purchase',
+    icon: 'car-sport',
+    color: COLORS.teal,
+    tab: 'Auto',
+  },
+  [SCENARIO_TYPES.AUTO_PAYOFF]: {
+    label: 'Car Payoff',
+    icon: 'trending-down',
+    color: COLORS.green,
+    tab: 'Auto',
+  },
+  [SCENARIO_TYPES.AUTO_REFINANCE]: {
+    label: 'Car Refinance',
+    icon: 'car',
+    color: COLORS.pink,
+    tab: 'Auto',
+  },
 };
 
 export default function SavedScreen() {
@@ -25,9 +63,8 @@ export default function SavedScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.SAVED);
-      setItems(raw ? JSON.parse(raw) : []);
-    } catch (e) {
+      setItems(await readSavedScenarios());
+    } catch {
       setItems([]);
     }
     setLoading(false);
@@ -36,13 +73,13 @@ export default function SavedScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load])
+    }, [load]),
   );
 
   const open = (item) => {
     Haptics.selectionAsync();
-    const meta = TYPE_META[item.type] || TYPE_META.purchase;
-    if (item.type === 'purchase') {
+    const meta = TYPE_META[item.type] || TYPE_META[SCENARIO_TYPES.HOME_PURCHASE];
+    if (item.type === SCENARIO_TYPES.HOME_PURCHASE) {
       navigation.navigate('Estimate', {
         screen: 'EstimatorHome',
         params: { restore: item, ts: Date.now() },
@@ -61,8 +98,16 @@ export default function SavedScreen() {
         style: 'destructive',
         onPress: async () => {
           const next = items.filter((i) => i.id !== id);
-          setItems(next);
-          await AsyncStorage.setItem(STORAGE_KEYS.SAVED, JSON.stringify(next));
+          try {
+            await writeSavedScenarios(next);
+            setItems(next);
+          } catch (error) {
+            console.error('Unable to delete saved estimate:', error);
+            Alert.alert(
+              'Unable to Delete',
+              'The saved estimate could not be deleted. Please try again.',
+            );
+          }
         },
       },
     ]);
@@ -77,8 +122,16 @@ export default function SavedScreen() {
         text: 'Clear All',
         style: 'destructive',
         onPress: async () => {
-          setItems([]);
-          await AsyncStorage.setItem(STORAGE_KEYS.SAVED, JSON.stringify([]));
+          try {
+            await writeSavedScenarios([]);
+            setItems([]);
+          } catch (error) {
+            console.error('Unable to clear saved estimates:', error);
+            Alert.alert(
+              'Unable to Clear',
+              'Saved estimates could not be cleared. Please try again.',
+            );
+          }
         },
       },
     ]);
@@ -89,13 +142,18 @@ export default function SavedScreen() {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const formatRate = (value) => (Number.isFinite(value) ? `${value.toFixed(2)}%` : '—');
+
   const renderItem = ({ item }) => {
-    const meta = TYPE_META[item.type] || TYPE_META.purchase;
+    const meta = TYPE_META[item.type] || TYPE_META[SCENARIO_TYPES.HOME_PURCHASE];
     const color = meta.color;
-    const isRefi = item.type === 'refinance';
-    const isCarRefi = item.type === 'car_refinance';
-    const isCarPurchase = item.type === 'car_purchase';
+    const isRefi = item.type === SCENARIO_TYPES.HOME_REFINANCE;
+    const isMortgagePayoff = item.type === SCENARIO_TYPES.MORTGAGE_PAYOFF;
+    const isCarRefi = item.type === SCENARIO_TYPES.AUTO_REFINANCE;
+    const isCarPayoff = item.type === SCENARIO_TYPES.AUTO_PAYOFF;
+    const isCarPurchase = item.type === SCENARIO_TYPES.AUTO_PURCHASE;
     const displayName = item.name || meta.label;
+    const result = item.results || {};
 
     return (
       <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => open(item)}>
@@ -109,99 +167,188 @@ export default function SavedScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.savedName} numberOfLines={1}>{displayName}</Text>
+        <Text style={styles.savedName} numberOfLines={1}>
+          {displayName}
+        </Text>
 
         {isRefi ? (
           <>
             <Text style={styles.mainValue}>
-              {item.monthlySavings > 0 ? fmtMoney(item.monthlySavings) : `-${fmtMoney(Math.abs(item.monthlySavings))}`}
+              {result.monthlySavings > 0
+                ? fmtMoney(result.monthlySavings)
+                : `-${fmtMoney(Math.abs(result.monthlySavings))}`}
               <Text style={styles.mainUnit}> /mo</Text>
             </Text>
             <View style={styles.metaRow}>
-              <Meta label="Balance" value={fmtMoney(item.balance)} />
-              <Meta label="Rate" value={`${item.curRate.toFixed(2)}% → ${item.newRate.toFixed(2)}%`} />
+              <Meta label="Balance" value={fmtMoney(result.balance)} />
+              <Meta
+                label="Rate"
+                value={`${formatRate(result.curRate)} → ${formatRate(result.newRate)}`}
+              />
             </View>
-            {typeof item.lifetimeSavings === 'number' ? (
+            {typeof result.lifetimeSavings === 'number' ? (
               <View style={styles.metaRow}>
                 <Meta
                   label="Lifetime Savings"
-                  value={item.lifetimeSavings >= 0 ? fmtMoney(item.lifetimeSavings) : `-${fmtMoney(Math.abs(item.lifetimeSavings))}`}
-                  color={item.lifetimeSavings >= 0 ? COLORS.green : COLORS.red}
+                  value={
+                    result.lifetimeSavings >= 0
+                      ? fmtMoney(result.lifetimeSavings)
+                      : `-${fmtMoney(Math.abs(result.lifetimeSavings))}`
+                  }
+                  color={result.lifetimeSavings >= 0 ? COLORS.green : COLORS.red}
                 />
-                <Meta label="Break-even" value={isFinite(item.breakEven) ? `${item.breakEven.toFixed(0)} mo` : 'Never'} />
+                <Meta
+                  label="Break-even"
+                  value={
+                    Number.isFinite(result.breakEven)
+                      ? `${result.breakEven.toFixed(0)} mo`
+                      : 'Never'
+                  }
+                />
               </View>
             ) : null}
-            <View style={[styles.verdictPill, { backgroundColor: (item.worthIt ? COLORS.green : COLORS.red) + '20' }]}>
+            <View
+              style={[
+                styles.verdictPill,
+                { backgroundColor: (result.worthIt ? COLORS.green : COLORS.red) + '20' },
+              ]}
+            >
               <Ionicons
-                name={item.worthIt ? 'checkmark-circle' : 'close-circle'}
+                name={result.worthIt ? 'checkmark-circle' : 'close-circle'}
                 size={14}
-                color={item.worthIt ? COLORS.green : COLORS.red}
+                color={result.worthIt ? COLORS.green : COLORS.red}
               />
-              <Text style={[styles.verdictPillText, { color: item.worthIt ? COLORS.green : COLORS.red }]}>
-                {item.worthIt ? 'Worth refinancing' : 'Not worth it'}
-                {typeof item.lifetimeSavings === 'number'
-                  ? ` · ${item.lifetimeSavings >= 0 ? 'saves' : 'loses'} ${fmtMoney(Math.abs(item.lifetimeSavings))} lifetime`
+              <Text
+                style={[
+                  styles.verdictPillText,
+                  { color: result.worthIt ? COLORS.green : COLORS.red },
+                ]}
+              >
+                {result.worthIt ? 'Worth refinancing' : 'Not worth it'}
+                {typeof result.lifetimeSavings === 'number'
+                  ? ` · ${result.lifetimeSavings >= 0 ? 'saves' : 'loses'} ${fmtMoney(Math.abs(result.lifetimeSavings))} lifetime`
                   : ''}
               </Text>
+            </View>
+          </>
+        ) : isMortgagePayoff ? (
+          <>
+            <Text style={styles.mainValue}>
+              {fmtMoney(result.interestSaved)}
+              <Text style={styles.mainUnit}> interest saved</Text>
+            </Text>
+            <View style={styles.metaRow}>
+              <Meta label="Balance" value={fmtMoney(result.balance)} />
+              <Meta label="Rate" value={formatRate(result.rate)} />
+              <Meta label="Payoff" value={`${(result.payoffMonths / 12).toFixed(1)} yr`} />
+            </View>
+            <View style={styles.metaRow}>
+              <Meta label="Time Saved" value={`${result.monthsSaved} mo`} color={COLORS.green} />
+              <Meta label="Extra / mo" value={fmtMoney(result.extra)} />
+              <Meta label="Lump Sum" value={fmtMoney(result.lump)} />
             </View>
           </>
         ) : isCarRefi ? (
           <>
             <Text style={styles.mainValue}>
-              {item.monthlySavings >= 0 ? fmtMoney(item.monthlySavings) : `-${fmtMoney(Math.abs(item.monthlySavings))}`}
+              {result.monthlySavings >= 0
+                ? fmtMoney(result.monthlySavings)
+                : `-${fmtMoney(Math.abs(result.monthlySavings))}`}
               <Text style={styles.mainUnit}> /mo</Text>
             </Text>
             <View style={styles.metaRow}>
-              <Meta label="Balance" value={fmtMoney(item.balance)} />
-              <Meta label="Rate" value={`${item.curRate.toFixed(2)}% → ${item.newRate.toFixed(2)}%`} />
-              <Meta label="Net" value={fmtMoney(item.netSavings)} color={item.netSavings >= 0 ? COLORS.green : COLORS.red} />
-            </View>
-            <View style={[styles.verdictPill, { backgroundColor: (item.worthIt ? COLORS.green : COLORS.red) + '20' }]}>
-              <Ionicons
-                name={item.worthIt ? 'checkmark-circle' : 'close-circle'}
-                size={14}
-                color={item.worthIt ? COLORS.green : COLORS.red}
+              <Meta label="Balance" value={fmtMoney(result.balance)} />
+              <Meta
+                label="Rate"
+                value={`${formatRate(result.curRate)} → ${formatRate(result.newRate)}`}
               />
-              <Text style={[styles.verdictPillText, { color: item.worthIt ? COLORS.green : COLORS.red }]}>
-                {item.worthIt ? 'Saves money' : 'Not worth it'}
+              <Meta
+                label="Net"
+                value={fmtMoney(result.netSavings)}
+                color={result.netSavings >= 0 ? COLORS.green : COLORS.red}
+              />
+            </View>
+            <View
+              style={[
+                styles.verdictPill,
+                { backgroundColor: (result.worthIt ? COLORS.green : COLORS.red) + '20' },
+              ]}
+            >
+              <Ionicons
+                name={result.worthIt ? 'checkmark-circle' : 'close-circle'}
+                size={14}
+                color={result.worthIt ? COLORS.green : COLORS.red}
+              />
+              <Text
+                style={[
+                  styles.verdictPillText,
+                  { color: result.worthIt ? COLORS.green : COLORS.red },
+                ]}
+              >
+                {result.worthIt ? 'Saves money' : 'Not worth it'}
               </Text>
+            </View>
+          </>
+        ) : isCarPayoff ? (
+          <>
+            <Text style={styles.mainValue}>
+              {fmtMoney(result.interestSaved)}
+              <Text style={styles.mainUnit}> interest saved</Text>
+            </Text>
+            <View style={styles.metaRow}>
+              <Meta label="Balance" value={fmtMoney(result.balance)} />
+              <Meta label="Rate" value={formatRate(result.rate)} />
+              <Meta label="Payoff" value={`${result.payoffMonths} mo`} />
+            </View>
+            <View style={styles.metaRow}>
+              <Meta label="Time Saved" value={`${result.monthsSaved} mo`} color={COLORS.green} />
+              <Meta label="Extra / mo" value={fmtMoney(result.extra)} />
+              <Meta label="Lump Sum" value={fmtMoney(result.lump)} />
             </View>
           </>
         ) : isCarPurchase ? (
           <>
             <Text style={styles.mainValue}>
-              {fmtMoney(item.monthly)}
+              {fmtMoney(result.monthly)}
               <Text style={styles.mainUnit}> /mo</Text>
             </Text>
             <View style={styles.metaRow}>
-              <Meta label="Price" value={fmtMoney(item.price)} />
-              <Meta label="Financed" value={fmtMoney(item.financed)} />
-              <Meta label="Rate" value={`${item.rate.toFixed(2)}%`} />
+              <Meta label="Price" value={fmtMoney(result.price)} />
+              <Meta label="Financed" value={fmtMoney(result.financed)} />
+              <Meta label="Rate" value={formatRate(result.rate)} />
             </View>
             <View style={styles.metaRow}>
-              <Meta label="Term" value={`${item.term} mo`} />
-              <Meta label="Total Interest" value={fmtMoney(item.totalInterest)} color={COLORS.red} />
+              <Meta label="Term" value={`${result.term} mo`} />
+              <Meta
+                label="Total Interest"
+                value={fmtMoney(result.totalInterest)}
+                color={COLORS.red}
+              />
             </View>
           </>
         ) : (
           <>
             <Text style={styles.mainValue}>
-              {fmtMoney(item.monthly)}
+              {fmtMoney(result.monthly)}
               <Text style={styles.mainUnit}> /mo</Text>
             </Text>
             <View style={styles.metaRow}>
-              <Meta label="Price" value={fmtMoney(item.price)} />
-              <Meta label="Loan" value={fmtMoney(item.loanAmount)} />
-              <Meta label="Rate" value={`${item.rate.toFixed(2)}%`} />
+              <Meta label="Price" value={fmtMoney(result.price)} />
+              <Meta label="Loan" value={fmtMoney(result.loanAmount)} />
+              <Meta label="Rate" value={formatRate(result.rate)} />
             </View>
             <View style={styles.metaRow}>
-              <Meta label="Term" value={`${item.term} yr`} />
-              <Meta label="Total Interest" value={fmtMoney(item.totalInterest)} color={COLORS.red} />
+              <Meta label="Term" value={`${result.term} yr`} />
+              <Meta
+                label="Total Interest"
+                value={fmtMoney(result.totalInterest)}
+                color={COLORS.red}
+              />
             </View>
           </>
         )}
         <View style={styles.cardFooter}>
-          <Text style={styles.date}>Saved {formatDate(item.date)}</Text>
+          <Text style={styles.date}>Saved {formatDate(item.createdAt)}</Text>
           <View style={styles.openHint}>
             <Text style={styles.openHintText}>Open</Text>
             <Ionicons name="chevron-forward" size={14} color={COLORS.accent} />
@@ -260,14 +407,31 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   emptyIcon: {
-    width: 88, height: 88, borderRadius: 44,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: COLORS.surfaceElevated,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
   emptyTitle: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '800' },
-  emptySub: { color: COLORS.textSecondary, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  emptySub: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
   list: { padding: 20, paddingBottom: 40 },
-  clearBtn: { flexDirection: 'row', gap: 6, alignSelf: 'flex-end', alignItems: 'center', marginBottom: 14, paddingVertical: 4 },
+  clearBtn: {
+    flexDirection: 'row',
+    gap: 6,
+    alignSelf: 'flex-end',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingVertical: 4,
+  },
   clearText: { color: COLORS.red, fontSize: 13, fontWeight: '700' },
   card: {
     backgroundColor: COLORS.card,
@@ -282,8 +446,20 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
   badgeText: { fontSize: 12, fontWeight: '700' },
   savedName: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '800', marginBottom: 8 },
   mainValue: { color: COLORS.textPrimary, fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
@@ -292,9 +468,23 @@ const styles = StyleSheet.create({
   meta: {},
   metaLabel: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600' },
   metaValue: { fontSize: 14, fontWeight: '700', marginTop: 2 },
-  verdictPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, marginTop: 14 },
+  verdictPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    marginTop: 14,
+  },
   verdictPillText: { fontSize: 12, fontWeight: '700' },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+  },
   date: { color: COLORS.textMuted, fontSize: 12, fontWeight: '500' },
   openHint: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   openHintText: { color: COLORS.accent, fontSize: 13, fontWeight: '700' },

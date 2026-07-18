@@ -41,6 +41,17 @@ export default function InputField({
   );
 }
 
+export function ValidationBanner({ message }) {
+  if (!message) return null;
+
+  return (
+    <View style={styles.validationBanner} accessibilityRole="alert">
+      <Text style={styles.validationTitle}>Check your inputs</Text>
+      <Text style={styles.validationMessage}>{message}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap: { marginBottom: 16 },
   label: {
@@ -67,4 +78,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
+  validationBanner: {
+    backgroundColor: COLORS.red + '18',
+    borderColor: COLORS.red + '55',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  validationTitle: { color: COLORS.red, fontSize: 13, fontWeight: '800', marginBottom: 3 },
+  validationMessage: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 18 },
 });

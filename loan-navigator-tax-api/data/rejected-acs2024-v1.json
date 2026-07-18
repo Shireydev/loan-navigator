@@ -1,0 +1,89 @@
+[
+  {
+    "countyFips": "02066",
+    "name": "Copper River Census Area, Alaska",
+    "reason": "Calculated rate is outside the validation range",
+    "effectiveTaxRate": 0.0006796448087431694
+  },
+  {
+    "countyFips": "02068",
+    "name": "Denali Borough, Alaska",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "02164",
+    "name": "Lake and Peninsula Borough, Alaska",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "02188",
+    "name": "Northwest Arctic Borough, Alaska",
+    "reason": "Calculated rate is outside the validation range",
+    "effectiveTaxRate": 0.0009994977398292315
+  },
+  {
+    "countyFips": "13239",
+    "name": "Quitman County, Georgia",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "15005",
+    "name": "Kalawao County, Hawaii",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "28055",
+    "name": "Issaquena County, Mississippi",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "48105",
+    "name": "Crockett County, Texas",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "48137",
+    "name": "Edwards County, Texas",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "48261",
+    "name": "Kenedy County, Texas",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "48301",
+    "name": "Loving County, Texas",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "72011",
+    "name": "Añasco Municipio, Puerto Rico",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "72027",
+    "name": "Camuy Municipio, Puerto Rico",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "72041",
+    "name": "Cidra Municipio, Puerto Rico",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "72055",
+    "name": "Guánica Municipio, Puerto Rico",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "72095",
+    "name": "Maunabo Municipio, Puerto Rico",
+    "reason": "Missing or invalid Census values"
+  },
+  {
+    "countyFips": "72115",
+    "name": "Quebradillas Municipio, Puerto Rico",
+    "reason": "Missing or invalid Census values"
+  }
+]

@@ -1,41 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import GradientHeader from '../components/GradientHeader';
-import InputField from '../components/InputField';
-import { COLORS, STORAGE_KEYS, monthlyPI, amortize, fmtMoney } from '../theme';
+import InputField, { ValidationBanner } from '../components/InputField';
+import {
+  COLORS,
+  monthlyPI,
+  amortize,
+  fmtMoney,
+  parseLoanNumber,
+  originalLoanFromRemainingBalance,
+  validateRefinanceScenario,
+} from '../theme';
 import { lookupTaxByZip } from '../taxApi';
+import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
 
 // Given an original loan (balance implied) at a rate, original term, and how many
 // years are left, recover the ORIGINAL loan amount so we can build an accurate
 // amortization schedule that matches the borrower's true remaining trajectory.
-function currentLoanFromRemaining(remainingBalance, annualRatePct, origYears, yearsLeft) {
-  const r = annualRatePct / 100 / 12;
-  const origMonths = Math.max(Math.round(origYears * 12), 1);
-  const monthsLeft = Math.max(Math.round(yearsLeft * 12), 1);
-  const monthsElapsed = Math.max(origMonths - monthsLeft, 0);
-
-  if (r === 0) {
-    const origPrincipal = (remainingBalance * origMonths) / monthsLeft;
-    const payment = origPrincipal / origMonths;
-    return { origPrincipal, payment, monthsLeft, origMonths, monthsElapsed };
-  }
-
-  const pn = Math.pow(1 + r, origMonths);
-  const pk = Math.pow(1 + r, monthsElapsed);
-  const factor = (pn - pk) / (pn - 1);
-  const origPrincipal = factor > 0 ? remainingBalance / factor : remainingBalance;
-  const payment = monthlyPI(origPrincipal, annualRatePct, origYears);
-  return { origPrincipal, payment, monthsLeft, origMonths, monthsElapsed };
-}
-
 export default function RefinanceScreen() {
   const route = useRoute();
   const navigation = useNavigation();
@@ -59,7 +55,7 @@ export default function RefinanceScreen() {
   // Restore a saved refinance analysis from the Saved tab.
   useEffect(() => {
     const rItem = route.params?.restore;
-    if (rItem && rItem.type === 'refinance' && rItem.inputs) {
+    if (rItem && rItem.type === SCENARIO_TYPES.HOME_REFINANCE && rItem.inputs) {
       const i = rItem.inputs;
       setBalance(i.balance ?? '360000');
       setCurRate(i.curRate ?? '7.25');
@@ -74,34 +70,47 @@ export default function RefinanceScreen() {
       setSaved(false);
       navigation.setParams({ restore: undefined });
     }
-  }, [route.params?.ts]);
+  }, [navigation, route.params?.restore, route.params?.ts]);
 
-  const num = (v) => parseFloat(String(v).replace(/[^0-9.]/g, '')) || 0;
+  const num = parseLoanNumber;
   const balN = num(balance);
-  const origYearsN = num(origYears) || 30;
-  const yearsLeftN = num(curYears) || 27;
-  const newTermN = num(newTerm) || 30;
+  const origYearsN = num(origYears);
+  const yearsLeftN = num(curYears);
+  const newTermN = num(newTerm);
+  const validationError = validateRefinanceScenario({
+    balance: balN,
+    currentRate: num(curRate),
+    originalTerm: origYearsN,
+    remainingTerm: yearsLeftN,
+    newRate: num(newRate),
+    newTerm: newTermN,
+    costs: num(costs),
+    termLabel: 'term',
+    maxTerm: 50,
+  });
 
-  const cur = balN > 0
-    ? currentLoanFromRemaining(balN, num(curRate), origYearsN, yearsLeftN)
+  const cur = !validationError
+    ? originalLoanFromRemainingBalance(balN, num(curRate), origYearsN * 12, yearsLeftN * 12)
     : null;
   const curPay = cur ? cur.payment : 0;
 
-  const newPay = balN > 0 ? monthlyPI(balN, num(newRate), newTermN) : 0;
+  const newPay = !validationError && balN > 0 ? monthlyPI(balN, num(newRate), newTermN) : 0;
   const monthlySavings = curPay - newPay;
-  const closingCosts = num(costs);
+  const closingCosts = validationError ? 0 : num(costs);
   const breakEven = monthlySavings > 0 ? closingCosts / monthlySavings : Infinity;
 
-  const curAm = balN > 0
-    ? (() => {
-        const monthsLeft = yearsLeftN;
-        const stdPay = monthlyPI(balN, num(curRate), monthsLeft);
-        const extra = curPay - stdPay;
-        return amortize(balN, num(curRate), monthsLeft, extra);
-      })()
-    : null;
-  const newAm = balN > 0 ? amortize(balN, num(newRate), newTermN, 0) : null;
-  const lifetimeSavings = curAm && newAm ? curAm.totalInterest - newAm.totalInterest - closingCosts : 0;
+  const curAm =
+    !validationError && balN > 0
+      ? (() => {
+          const monthsLeft = yearsLeftN;
+          const stdPay = monthlyPI(balN, num(curRate), monthsLeft);
+          const extra = curPay - stdPay;
+          return amortize(balN, num(curRate), monthsLeft, extra);
+        })()
+      : null;
+  const newAm = !validationError && balN > 0 ? amortize(balN, num(newRate), newTermN, 0) : null;
+  const lifetimeSavings =
+    curAm && newAm ? curAm.totalInterest - newAm.totalInterest - closingCosts : 0;
 
   const savesLifetime = lifetimeSavings > 0;
   const reasonableBreakEven = isFinite(breakEven) && breakEven <= 60;
@@ -116,9 +125,8 @@ export default function RefinanceScreen() {
   // Longer new terms mean slightly higher origination as a share; short terms
   // carry a bump too. Baseline at 30yr.
   const refiTermAdj = newTermN <= 15 ? 1.06 : newTermN <= 20 ? 1.03 : 1.0;
-  const estRefiClosing = zipInfo && balN > 0
-    ? balN * (refiClosingRate / 100) * refiTermAdj
-    : 0;
+  const estRefiClosing =
+    !validationError && zipInfo && balN > 0 ? balN * (refiClosingRate / 100) * refiTermAdj : 0;
 
   const lookupZip = async () => {
     const clean = zip.replace(/[^0-9]/g, '');
@@ -135,7 +143,7 @@ export default function RefinanceScreen() {
       const info = await lookupTaxByZip(clean);
       setZipInfo(info);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
+    } catch {
       setZipError("Couldn't find that ZIP code. Check it and try again.");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
@@ -149,53 +157,70 @@ export default function RefinanceScreen() {
   };
 
   const analyze = () => {
+    if (validationError) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Check Your Inputs', validationError);
+      return;
+    }
+
     Haptics.notificationAsync(
-      worthIt ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning
+      worthIt ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Warning,
     );
     setAnalyzed(true);
     setSaved(false);
   };
 
-  const verdictTitle = monthlySavings <= 0
-    ? 'Not Worth It'
-    : !savesLifetime
-    ? 'Not Worth It Long-Term'
-    : strongYes
-    ? 'Refinancing Is Worth It'
-    : 'Worth It — But Slow to Pay Off';
+  const verdictTitle =
+    monthlySavings <= 0
+      ? 'Not Worth It'
+      : !savesLifetime
+        ? 'Not Worth It Long-Term'
+        : strongYes
+          ? 'Refinancing Is Worth It'
+          : 'Worth It — But Slow to Pay Off';
 
-  const verdictSub = monthlySavings <= 0
-    ? 'The new loan raises your monthly payment.'
-    : !savesLifetime
-    ? `Over the life of the loan you'd lose ${fmtMoney(Math.abs(lifetimeSavings))} after closing costs.`
-    : strongYes
-    ? `You save ${fmtMoney(lifetimeSavings)} over the loan and break even in ${breakEven.toFixed(1)} months.`
-    : `You save ${fmtMoney(lifetimeSavings)} lifetime, but it takes ${breakEven.toFixed(1)} months to break even.`;
+  const verdictSub =
+    monthlySavings <= 0
+      ? 'The new loan raises your monthly payment.'
+      : !savesLifetime
+        ? `Over the life of the loan you'd lose ${fmtMoney(Math.abs(lifetimeSavings))} after closing costs.`
+        : strongYes
+          ? `You save ${fmtMoney(lifetimeSavings)} over the loan and break even in ${breakEven.toFixed(1)} months.`
+          : `You save ${fmtMoney(lifetimeSavings)} lifetime, but it takes ${breakEven.toFixed(1)} months to break even.`;
 
   const saveAnalysis = async () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (validationError) {
+      Alert.alert('Check Your Inputs', validationError);
+      return;
+    }
+
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.SAVED);
-      const list = raw ? JSON.parse(raw) : [];
-      list.unshift({
-        id: Date.now().toString(),
-        type: 'refinance',
+      await addSavedScenario({
+        type: SCENARIO_TYPES.HOME_REFINANCE,
         name: name.trim() || 'Home Refinance',
-        date: new Date().toISOString(),
-        balance: balN,
-        curRate: num(curRate),
-        newRate: num(newRate),
-        origYears: origYearsN,
-        yearsLeft: yearsLeftN,
-        monthlySavings,
-        breakEven,
-        lifetimeSavings,
-        worthIt,
         inputs: { balance, curRate, origYears, curYears, newRate, newTerm, costs, zip },
+        results: {
+          balance: balN,
+          curRate: num(curRate),
+          newRate: num(newRate),
+          origYears: origYearsN,
+          yearsLeft: yearsLeftN,
+          monthlySavings,
+          breakEven,
+          lifetimeSavings,
+          worthIt,
+        },
       });
-      await AsyncStorage.setItem(STORAGE_KEYS.SAVED, JSON.stringify(list));
       setSaved(true);
-    } catch (e) {}
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Unable to save refinance analysis:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        'Unable to Save',
+        'Your refinance analysis could not be saved. Please try again.',
+      );
+    }
   };
 
   return (
@@ -210,37 +235,79 @@ export default function RefinanceScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <ValidationBanner message={validationError} />
           <Text style={styles.sectionTitle}>Current Mortgage</Text>
-          <InputField label="Remaining Balance" value={balance} onChangeText={setBalance} prefix="$" />
+          <InputField
+            label="Remaining Balance"
+            value={balance}
+            onChangeText={setBalance}
+            prefix="$"
+          />
           <View style={styles.rowInputs}>
             <View style={{ flex: 1 }}>
-              <InputField label="Current Rate" value={curRate} onChangeText={setCurRate} suffix="%" accentColor={COLORS.red} />
+              <InputField
+                label="Current Rate"
+                value={curRate}
+                onChangeText={setCurRate}
+                suffix="%"
+                accentColor={COLORS.red}
+              />
             </View>
             <View style={{ width: 12 }} />
             <View style={{ flex: 1 }}>
-              <InputField label="Original Term" value={origYears} onChangeText={setOrigYears} suffix="yr" accentColor={COLORS.pink} />
+              <InputField
+                label="Original Term"
+                value={origYears}
+                onChangeText={setOrigYears}
+                suffix="yr"
+                accentColor={COLORS.pink}
+              />
             </View>
           </View>
-          <InputField label="Years Left" value={curYears} onChangeText={setCurYears} suffix="yr" accentColor={COLORS.teal} />
+          <InputField
+            label="Years Left"
+            value={curYears}
+            onChangeText={setCurYears}
+            suffix="yr"
+            accentColor={COLORS.teal}
+          />
           <View style={styles.hintRow}>
             <Ionicons name="information-circle" size={15} color={COLORS.textMuted} />
             <Text style={styles.hintText}>
-              Original term lets us rebuild your true amortization schedule so the
-              interest comparison is accurate.
+              Original term lets us rebuild your true amortization schedule so the interest
+              comparison is accurate.
             </Text>
           </View>
 
           <Text style={styles.sectionTitle}>New Loan Offer</Text>
           <View style={styles.rowInputs}>
             <View style={{ flex: 1 }}>
-              <InputField label="New Rate" value={newRate} onChangeText={setNewRate} suffix="%" accentColor={COLORS.green} />
+              <InputField
+                label="New Rate"
+                value={newRate}
+                onChangeText={setNewRate}
+                suffix="%"
+                accentColor={COLORS.green}
+              />
             </View>
             <View style={{ width: 12 }} />
             <View style={{ flex: 1 }}>
-              <InputField label="New Term" value={newTerm} onChangeText={setNewTerm} suffix="yr" accentColor={COLORS.purple} />
+              <InputField
+                label="New Term"
+                value={newTerm}
+                onChangeText={setNewTerm}
+                suffix="yr"
+                accentColor={COLORS.purple}
+              />
             </View>
           </View>
-          <InputField label="Closing Costs" value={costs} onChangeText={setCosts} prefix="$" accentColor={COLORS.amber} />
+          <InputField
+            label="Closing Costs"
+            value={costs}
+            onChangeText={setCosts}
+            prefix="$"
+            accentColor={COLORS.amber}
+          />
 
           {/* ---------------- OPTIONAL: ZIP CLOSING COST ESTIMATOR ---------------- */}
           <View style={styles.zipCard}>
@@ -253,15 +320,20 @@ export default function RefinanceScreen() {
                   Estimate closing costs by ZIP <Text style={styles.optional}>(optional)</Text>
                 </Text>
                 <Text style={styles.zipSub}>
-                  Enter your ZIP and we'll estimate the closing costs for your new
-                  refinance loan using local, county and state fee data.
+                  Enter your ZIP and we'll estimate the closing costs for your new refinance loan
+                  using local, county and state fee data.
                 </Text>
               </View>
             </View>
 
             <View style={styles.zipInputRow}>
               <View style={styles.zipInputWrap}>
-                <Ionicons name="pin" size={16} color={COLORS.textMuted} style={{ marginRight: 8 }} />
+                <Ionicons
+                  name="pin"
+                  size={16}
+                  color={COLORS.textMuted}
+                  style={{ marginRight: 8 }}
+                />
                 <TextInput
                   style={styles.zipInput}
                   value={zip}
@@ -318,13 +390,17 @@ export default function RefinanceScreen() {
                     </Text>
                   </View>
                   <Text style={styles.closingNote}>
-                    ~{(refiClosingRate * refiTermAdj).toFixed(1)}% of your {fmtMoney(balN)} balance ·
-                    {' '}based on {zipInfo.state} refinance fees, {newTermN}yr new term. Refinances
+                    ~{(refiClosingRate * refiTermAdj).toFixed(1)}% of your {fmtMoney(balN)} balance
+                    · based on {zipInfo.state} refinance fees, {newTermN}yr new term. Refinances
                     typically avoid transfer taxes, so costs run lower than a purchase.
                   </Text>
                 </View>
 
-                <TouchableOpacity style={styles.applyBtn} activeOpacity={0.9} onPress={applyEstimatedClosing}>
+                <TouchableOpacity
+                  style={styles.applyBtn}
+                  activeOpacity={0.9}
+                  onPress={applyEstimatedClosing}
+                >
                   <Ionicons name="download" size={16} color="#fff" />
                   <Text style={styles.applyText}>Use this as my closing costs</Text>
                 </TouchableOpacity>
@@ -341,16 +417,26 @@ export default function RefinanceScreen() {
             <Text style={styles.analyzeText}>Analyze Refinance</Text>
           </TouchableOpacity>
 
-          {analyzed ? (
+          {analyzed && !validationError ? (
             <>
-              <View style={[styles.verdict, { backgroundColor: (worthIt ? COLORS.green : COLORS.red) + '18', borderColor: (worthIt ? COLORS.green : COLORS.red) + '44' }]}>
+              <View
+                style={[
+                  styles.verdict,
+                  {
+                    backgroundColor: (worthIt ? COLORS.green : COLORS.red) + '18',
+                    borderColor: (worthIt ? COLORS.green : COLORS.red) + '44',
+                  },
+                ]}
+              >
                 <Ionicons
                   name={worthIt ? 'checkmark-circle' : 'close-circle'}
                   size={34}
                   color={worthIt ? COLORS.green : COLORS.red}
                 />
                 <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={[styles.verdictTitle, { color: worthIt ? COLORS.green : COLORS.red }]}>
+                  <Text
+                    style={[styles.verdictTitle, { color: worthIt ? COLORS.green : COLORS.red }]}
+                  >
                     {verdictTitle}
                   </Text>
                   <Text style={styles.verdictSub}>{verdictSub}</Text>
@@ -358,18 +444,43 @@ export default function RefinanceScreen() {
               </View>
 
               {/* Lifetime savings highlight — the primary decision factor */}
-              <View style={[styles.lifetimeCard, { borderColor: (savesLifetime ? COLORS.green : COLORS.red) + '44', backgroundColor: (savesLifetime ? COLORS.green : COLORS.red) + '12' }]}>
+              <View
+                style={[
+                  styles.lifetimeCard,
+                  {
+                    borderColor: (savesLifetime ? COLORS.green : COLORS.red) + '44',
+                    backgroundColor: (savesLifetime ? COLORS.green : COLORS.red) + '12',
+                  },
+                ]}
+              >
                 <View style={styles.lifetimeHead}>
-                  <View style={[styles.lifetimeIcon, { backgroundColor: (savesLifetime ? COLORS.green : COLORS.red) + '22' }]}>
-                    <Ionicons name={savesLifetime ? 'trending-up' : 'trending-down'} size={22} color={savesLifetime ? COLORS.green : COLORS.red} />
+                  <View
+                    style={[
+                      styles.lifetimeIcon,
+                      { backgroundColor: (savesLifetime ? COLORS.green : COLORS.red) + '22' },
+                    ]}
+                  >
+                    <Ionicons
+                      name={savesLifetime ? 'trending-up' : 'trending-down'}
+                      size={22}
+                      color={savesLifetime ? COLORS.green : COLORS.red}
+                    />
                   </View>
                   <Text style={styles.lifetimeLabel}>Lifetime Savings (after costs)</Text>
                 </View>
-                <Text style={[styles.lifetimeValue, { color: savesLifetime ? COLORS.green : COLORS.red }]}>
-                  {lifetimeSavings >= 0 ? fmtMoney(lifetimeSavings) : `-${fmtMoney(Math.abs(lifetimeSavings))}`}
+                <Text
+                  style={[
+                    styles.lifetimeValue,
+                    { color: savesLifetime ? COLORS.green : COLORS.red },
+                  ]}
+                >
+                  {lifetimeSavings >= 0
+                    ? fmtMoney(lifetimeSavings)
+                    : `-${fmtMoney(Math.abs(lifetimeSavings))}`}
                 </Text>
                 <Text style={styles.lifetimeSub}>
-                  Total interest saved over the loan minus your {fmtMoney(closingCosts)} in closing costs.
+                  Total interest saved over the loan minus your {fmtMoney(closingCosts)} in closing
+                  costs.
                 </Text>
               </View>
 
@@ -382,7 +493,9 @@ export default function RefinanceScreen() {
                 <Ionicons name="arrow-forward" size={22} color={COLORS.textMuted} />
                 <View style={styles.compareCol}>
                   <Text style={styles.compareHead}>New</Text>
-                  <Text style={[styles.comparePay, { color: COLORS.green }]}>{fmtMoney(newPay)}</Text>
+                  <Text style={[styles.comparePay, { color: COLORS.green }]}>
+                    {fmtMoney(newPay)}
+                  </Text>
                   <Text style={styles.compareRate}>{num(newRate).toFixed(2)}% / mo P&I</Text>
                 </View>
               </View>
@@ -390,7 +503,11 @@ export default function RefinanceScreen() {
               <View style={styles.metricsCard}>
                 <MetricRow
                   label="Monthly Savings"
-                  value={monthlySavings > 0 ? fmtMoney(monthlySavings) : `-${fmtMoney(Math.abs(monthlySavings))}`}
+                  value={
+                    monthlySavings > 0
+                      ? fmtMoney(monthlySavings)
+                      : `-${fmtMoney(Math.abs(monthlySavings))}`
+                  }
                   color={monthlySavings > 0 ? COLORS.green : COLORS.red}
                 />
                 <MetricRow
@@ -415,7 +532,11 @@ export default function RefinanceScreen() {
                 />
                 <MetricRow
                   label="Lifetime Savings"
-                  value={lifetimeSavings >= 0 ? fmtMoney(lifetimeSavings) : `-${fmtMoney(Math.abs(lifetimeSavings))}`}
+                  value={
+                    lifetimeSavings >= 0
+                      ? fmtMoney(lifetimeSavings)
+                      : `-${fmtMoney(Math.abs(lifetimeSavings))}`
+                  }
                   color={lifetimeSavings >= 0 ? COLORS.green : COLORS.red}
                   last
                 />
@@ -464,7 +585,13 @@ function MetricRow({ label, value, color, last }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   scroll: { padding: 20, paddingBottom: 40 },
-  sectionTitle: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '800', marginBottom: 14, marginTop: 4 },
+  sectionTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 14,
+    marginTop: 4,
+  },
   optional: { color: COLORS.textMuted, fontSize: 12, fontWeight: '600' },
   rowInputs: { flexDirection: 'row' },
   hintRow: {
@@ -487,11 +614,20 @@ const styles = StyleSheet.create({
   },
   zipHead: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   zipIcon: {
-    width: 36, height: 36, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   zipTitle: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '800' },
-  zipSub: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500', marginTop: 4, lineHeight: 17 },
+  zipSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+    lineHeight: 17,
+  },
   zipInputRow: { flexDirection: 'row', gap: 10 },
   zipInputWrap: {
     flex: 1,
@@ -504,7 +640,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 50,
   },
-  zipInput: { flex: 1, color: COLORS.textPrimary, fontSize: 17, fontWeight: '700', letterSpacing: 1 },
+  zipInput: {
+    flex: 1,
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
   zipBtn: {
     flexDirection: 'row',
     gap: 6,
@@ -538,12 +680,21 @@ const styles = StyleSheet.create({
   },
   closingHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   closingIcon: {
-    width: 30, height: 30, borderRadius: 9,
-    alignItems: 'center', justifyContent: 'center',
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   closingLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700', flex: 1 },
   closingValue: { fontSize: 18, fontWeight: '900' },
-  closingNote: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600', marginTop: 8, lineHeight: 15 },
+  closingNote: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 8,
+    lineHeight: 15,
+  },
   applyBtn: {
     flexDirection: 'row',
     gap: 8,
@@ -555,7 +706,13 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   applyText: { color: '#fff', fontSize: 14, fontWeight: '800' },
-  zipDisclaimer: { color: COLORS.textMuted, fontSize: 11, fontWeight: '500', marginTop: 10, lineHeight: 15 },
+  zipDisclaimer: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 10,
+    lineHeight: 15,
+  },
   analyzeBtn: {
     flexDirection: 'row',
     gap: 10,
@@ -581,7 +738,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   verdictTitle: { fontSize: 17, fontWeight: '800' },
-  verdictSub: { color: COLORS.textSecondary, fontSize: 13, marginTop: 4, fontWeight: '500', lineHeight: 18 },
+  verdictSub: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    marginTop: 4,
+    fontWeight: '500',
+    lineHeight: 18,
+  },
   lifetimeCard: {
     borderRadius: 18,
     padding: 20,
@@ -590,12 +753,21 @@ const styles = StyleSheet.create({
   },
   lifetimeHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   lifetimeIcon: {
-    width: 36, height: 36, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   lifetimeLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '700', flex: 1 },
   lifetimeValue: { fontSize: 34, fontWeight: '900', marginTop: 12, letterSpacing: -1 },
-  lifetimeSub: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500', marginTop: 6, lineHeight: 17 },
+  lifetimeSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 6,
+    lineHeight: 17,
+  },
   compareCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -608,7 +780,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   compareCol: { alignItems: 'center', flex: 1 },
-  compareHead: { color: COLORS.textMuted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  compareHead: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   comparePay: { fontSize: 24, fontWeight: '900', marginVertical: 4 },
   compareRate: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600' },
   metricsCard: {

@@ -66,9 +66,15 @@ export default function BalanceLineChart({
 
   const initial = (sch) => Math.max(...sch.map((s) => s.balance), 0);
 
-  const s1 = [{ year: 0, balance: initial(schedule) }, ...schedule.map((s) => ({ year: s.year, balance: s.balance }))];
+  const s1 = [
+    { year: 0, balance: initial(schedule) },
+    ...schedule.map((s) => ({ year: s.year, balance: s.balance })),
+  ];
   const s2 = compareSchedule
-    ? [{ year: 0, balance: initial(compareSchedule) }, ...compareSchedule.map((s) => ({ year: s.year, balance: s.balance }))]
+    ? [
+        { year: 0, balance: initial(compareSchedule) },
+        ...compareSchedule.map((s) => ({ year: s.year, balance: s.balance })),
+      ]
     : null;
 
   const maxYear = Math.max(s1[s1.length - 1].year, s2 ? s2[s2.length - 1].year : 0, 1);
@@ -107,7 +113,9 @@ export default function BalanceLineChart({
         {/* Y axis labels */}
         <View style={[styles.yAxis, { height: plotH }]}>
           {tickVals.map((v, i) => (
-            <Text key={i} style={styles.yLabel}>{fmtAxis(v)}</Text>
+            <Text key={i} style={styles.yLabel}>
+              {fmtAxis(v)}
+            </Text>
           ))}
         </View>
 
@@ -115,14 +123,25 @@ export default function BalanceLineChart({
         <View style={[styles.plot, { width: plotW, height: plotH }]}>
           {/* grid lines */}
           {tickVals.map((_, i) => (
-            <View
-              key={i}
-              style={[styles.grid, { top: (plotH / yTicks) * i }]}
-            />
+            <View key={i} style={[styles.grid, { top: (plotH / yTicks) * i }]} />
           ))}
-          <Series points={s1} color={color} plotW={plotW} plotH={plotH} maxYear={maxYear} maxBal={maxBal} />
+          <Series
+            points={s1}
+            color={color}
+            plotW={plotW}
+            plotH={plotH}
+            maxYear={maxYear}
+            maxBal={maxBal}
+          />
           {s2 ? (
-            <Series points={s2} color={compareColor} plotW={plotW} plotH={plotH} maxYear={maxYear} maxBal={maxBal} />
+            <Series
+              points={s2}
+              color={compareColor}
+              plotW={plotW}
+              plotH={plotH}
+              maxYear={maxYear}
+              maxBal={maxBal}
+            />
           ) : null}
         </View>
       </View>
@@ -132,10 +151,7 @@ export default function BalanceLineChart({
         {xTicks.map((yr, i) => (
           <Text
             key={i}
-            style={[
-              styles.xLabel,
-              { position: 'absolute', left: (yr / maxYear) * plotW - 10 },
-            ]}
+            style={[styles.xLabel, { position: 'absolute', left: (yr / maxYear) * plotW - 10 }]}
           >
             {yr}
           </Text>
@@ -147,7 +163,13 @@ export default function BalanceLineChart({
 }
 
 const styles = StyleSheet.create({
-  legendRow: { flexDirection: 'row', gap: 18, justifyContent: 'flex-end', marginBottom: 12, flexWrap: 'wrap' },
+  legendRow: {
+    flexDirection: 'row',
+    gap: 18,
+    justifyContent: 'flex-end',
+    marginBottom: 12,
+    flexWrap: 'wrap',
+  },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
@@ -155,8 +177,27 @@ const styles = StyleSheet.create({
   yAxis: { width: 44, justifyContent: 'space-between', paddingRight: 6 },
   yLabel: { color: COLORS.textMuted, fontSize: 10, fontWeight: '600', textAlign: 'right' },
   plot: { position: 'relative' },
-  grid: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: COLORS.border, opacity: 0.4 },
+  grid: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: COLORS.border,
+    opacity: 0.4,
+  },
   xAxis: { height: 16, marginTop: 4 },
-  xLabel: { color: COLORS.textMuted, fontSize: 10, fontWeight: '600', textAlign: 'center', width: 20 },
-  axisTitle: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: 6 },
+  xLabel: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
+    width: 20,
+  },
+  axisTitle: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 6,
+  },
 });

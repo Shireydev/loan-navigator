@@ -25,7 +25,7 @@
 
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.wron.app0y11op2ify",
+      "bundleIdentifier": "com.wron.app0y11op2ify"
     },
 
     "android": {
