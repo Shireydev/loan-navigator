@@ -19,8 +19,14 @@ function loadAppModule(relativePath) {
   return loaded.exports;
 }
 
-const { monthlyPI, amortize, amortizeWithPayment, formatInputWithCommas } =
-  loadAppModule('theme.js');
+const {
+  monthlyPI,
+  amortize,
+  amortizeWithPayment,
+  formatInputWithCommas,
+  remainingBalanceFromOriginal,
+} = loadAppModule('theme.js');
+const { getStateBaseSalesTaxRate } = loadAppModule('taxApi.js');
 
 function assertClose(actual, expected, tolerance = 0.01) {
   assert.ok(
@@ -70,6 +76,19 @@ test('a lump-sum principal reduction shortens payoff at the same payment', () =>
   assert.ok(afterLump.totalInterest < baseline.totalInterest);
 });
 
+test('original loan terms derive a remaining refinance balance on schedule', () => {
+  const originalLoan = 500000;
+  const rate = 7.25;
+  const originalMonths = 360;
+  const monthsRemaining = 324;
+  const balance = remainingBalanceFromOriginal(originalLoan, rate, originalMonths, monthsRemaining);
+  const payment = monthlyPI(originalLoan, rate, originalMonths / 12);
+  const remainingLoan = amortizeWithPayment(balance, rate, payment);
+
+  assert.ok(balance < originalLoan);
+  assert.equal(remainingLoan.months, monthsRemaining);
+});
+
 test('amortizeWithPayment detects a payment that cannot reduce principal', () => {
   const result = amortizeWithPayment(100000, 12, 1000);
 
@@ -81,4 +100,14 @@ test('numeric input formatting preserves decimals and separators', () => {
   assert.equal(formatInputWithCommas('0012345.67'), '12,345.67');
   assert.equal(formatInputWithCommas('12.3.4'), '12.34');
   assert.equal(formatInputWithCommas(''), '');
+});
+
+test('state sales-tax lookup accepts standard state codes', () => {
+  assert.equal(getStateBaseSalesTaxRate('mi'), 6);
+  assert.equal(getStateBaseSalesTaxRate(' CA '), 7.25);
+});
+
+test('state sales-tax lookup preserves zero-tax states and rejects unknown codes', () => {
+  assert.equal(getStateBaseSalesTaxRate('OR'), 0);
+  assert.equal(getStateBaseSalesTaxRate('XX'), null);
 });

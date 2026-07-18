@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,7 @@ import {
 } from '../theme';
 import { lookupTaxByZip } from '../taxApi';
 import { SCENARIO_TYPES } from '../savedScenarios';
+import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 
 const TERMS = [15, 20, 30];
 
@@ -111,6 +112,8 @@ function CostSummary({ label, value, color }) {
 export default function EstimatorScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const scrollRef = useRef(null);
+  useScrollToTopOnFocus(scrollRef, undefined, 'Estimate');
   const [price, setPrice] = useState(formatInputWithCommas('450000'));
   const [down, setDown] = useState(formatInputWithCommas('90000'));
   const [rate, setRate] = useState('6.75');
@@ -352,6 +355,7 @@ export default function EstimatorScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView
+          ref={scrollRef}
           style={styles.formScroll}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"

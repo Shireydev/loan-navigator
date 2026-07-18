@@ -65,6 +65,71 @@ export const STATE_TAX_RATE = {
   DC: 0.57,
 };
 
+// Standard statewide sales/use tax rates as of January 1, 2026.
+// These are intentionally presented as a starting estimate for auto purchases:
+// vehicle-specific rates, local taxes, caps, title fees, and excise taxes can differ.
+export const STATE_BASE_SALES_TAX_RATE = {
+  AL: 4,
+  AK: 0,
+  AZ: 5.6,
+  AR: 6.5,
+  CA: 7.25,
+  CO: 2.9,
+  CT: 6.35,
+  DE: 0,
+  FL: 6,
+  GA: 4,
+  HI: 4,
+  ID: 6,
+  IL: 6.25,
+  IN: 7,
+  IA: 6,
+  KS: 6.5,
+  KY: 6,
+  LA: 5,
+  ME: 5.5,
+  MD: 6,
+  MA: 6.25,
+  MI: 6,
+  MN: 6.875,
+  MS: 7,
+  MO: 4.225,
+  MT: 0,
+  NE: 5.5,
+  NV: 6.85,
+  NH: 0,
+  NJ: 6.625,
+  NM: 4.875,
+  NY: 4,
+  NC: 4.75,
+  ND: 5,
+  OH: 5.75,
+  OK: 4.5,
+  OR: 0,
+  PA: 6,
+  RI: 7,
+  SC: 6,
+  SD: 4.2,
+  TN: 7,
+  TX: 6.25,
+  UT: 4.85,
+  VT: 6,
+  VA: 4.3,
+  WA: 6.5,
+  WV: 6,
+  WI: 5,
+  WY: 4,
+  DC: 6,
+};
+
+export function getStateBaseSalesTaxRate(stateCode) {
+  const code = String(stateCode || '')
+    .trim()
+    .toUpperCase();
+  const rate = STATE_BASE_SALES_TAX_RATE[code];
+  return Number.isFinite(rate) ? rate : null;
+}
+
 // State-level home insurance base premium in dollars per year.
 export const STATE_INS_BASE = {
   AL: 1900,

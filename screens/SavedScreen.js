@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import GradientHeader from '../components/GradientHeader';
 import { COLORS, fmtMoney } from '../theme';
 import { readSavedScenarios, SCENARIO_TYPES, writeSavedScenarios } from '../savedScenarios';
+import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 
 const TYPE_META = {
   [SCENARIO_TYPES.HOME_PURCHASE]: {
@@ -57,6 +58,8 @@ const TYPE_META = {
 
 export default function SavedScreen() {
   const navigation = useNavigation();
+  const listRef = useRef(null);
+  useScrollToTopOnFocus(listRef, undefined, 'Saved');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -82,6 +85,25 @@ export default function SavedScreen() {
     if (item.type === SCENARIO_TYPES.HOME_PURCHASE) {
       navigation.navigate('Estimate', {
         screen: 'EstimatorHome',
+        params: { restore: item, ts: Date.now() },
+      });
+    } else if (item.type === SCENARIO_TYPES.HOME_REFINANCE) {
+      navigation.navigate('Refinance', {
+        screen: 'RefinanceHome',
+        params: { restore: item, ts: Date.now() },
+      });
+    } else if (item.type === SCENARIO_TYPES.MORTGAGE_PAYOFF) {
+      navigation.navigate('Payoff', {
+        screen: 'PayoffHome',
+        params: { restore: item, ts: Date.now() },
+      });
+    } else if (
+      item.type === SCENARIO_TYPES.AUTO_PURCHASE ||
+      item.type === SCENARIO_TYPES.AUTO_PAYOFF ||
+      item.type === SCENARIO_TYPES.AUTO_REFINANCE
+    ) {
+      navigation.navigate('Auto', {
+        screen: 'AutoHome',
         params: { restore: item, ts: Date.now() },
       });
     } else {
@@ -164,23 +186,14 @@ export default function SavedScreen() {
         accessibilityLabel={`Open ${displayName}`}
       >
         <View style={styles.cardTop}>
+          <Text style={styles.savedName} numberOfLines={2}>
+            {displayName}
+          </Text>
           <View style={[styles.badge, { backgroundColor: color + '22' }]}>
             <Ionicons name={meta.icon} size={16} color={color} />
             <Text style={[styles.badgeText, { color }]}>{meta.label}</Text>
           </View>
-          <TouchableOpacity
-            onPress={() => remove(item.id)}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel={`Delete ${displayName}`}
-          >
-            <Ionicons name="trash-outline" size={18} color={COLORS.textMuted} />
-          </TouchableOpacity>
         </View>
-
-        <Text style={styles.savedName} numberOfLines={1}>
-          {displayName}
-        </Text>
 
         {isRefi ? (
           <>
@@ -360,7 +373,16 @@ export default function SavedScreen() {
         )}
         <View style={styles.cardFooter}>
           <Text style={styles.date}>Saved {formatDate(item.createdAt)}</Text>
-          <View style={styles.openHint}>
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.deleteBtn}
+              onPress={() => remove(item.id)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${displayName}`}
+            >
+              <Ionicons name="trash-outline" size={17} color={COLORS.textMuted} />
+            </TouchableOpacity>
             <Ionicons name="chevron-forward" size={18} color={COLORS.accent} />
           </View>
         </View>
@@ -403,6 +425,7 @@ export default function SavedScreen() {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={items}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
@@ -504,8 +527,9 @@ const styles = StyleSheet.create({
   cardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 12,
   },
   badge: {
     flexDirection: 'row',
@@ -516,7 +540,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   badgeText: { fontSize: 12, fontWeight: '700' },
-  savedName: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '800', marginBottom: 8 },
+  savedName: {
+    flex: 1,
+    color: COLORS.textPrimary,
+    fontSize: 17,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
   mainValue: { color: COLORS.textPrimary, fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
   mainUnit: { fontSize: 15, fontWeight: '600', color: COLORS.textMuted },
   metaRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
@@ -544,5 +574,13 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.border,
   },
   date: { color: COLORS.textMuted, fontSize: 12, fontWeight: '500' },
-  openHint: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: COLORS.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import { COLORS } from '../theme';
+import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 
 const HOME_TOOLS = [
   {
@@ -111,6 +112,8 @@ function SectionHeader({ icon, title, color }) {
 export default function LandingScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef(null);
+  useScrollToTopOnFocus(scrollRef, undefined, 'Home');
 
   const go = (tool) => {
     Haptics.selectionAsync();
@@ -123,8 +126,8 @@ export default function LandingScreen() {
       });
     } else if (target.mode) {
       navigation.navigate(target.tab, {
-        landingMode: target.mode,
-        ts: Date.now(),
+        screen: 'AutoHome',
+        params: { landingMode: target.mode, ts: Date.now() },
       });
     } else {
       navigation.navigate(target.tab);
@@ -134,6 +137,7 @@ export default function LandingScreen() {
   return (
     <View style={styles.container}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[
           styles.scroll,
           {

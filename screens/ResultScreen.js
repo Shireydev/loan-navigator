@@ -17,8 +17,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import DonutChart from '../components/DonutChart';
-import { COLORS, amortize, monthlyPI, fmtMoney } from '../theme';
+import { COLORS, amortize, monthlyPI, fmtMoney, formatInputWithCommas } from '../theme';
 import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
+import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 const HEADER_COLLAPSE_DISTANCE = 96;
@@ -94,9 +95,40 @@ export default function ResultScreen({ route }) {
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   const resultsScrollRef = useRef(null);
+  useScrollToTopOnFocus(resultsScrollRef, () => scrollY.setValue(0), 'Estimate');
   const [saved, setSaved] = useState(false);
   const p = route.params;
   const [name, setName] = useState(p.presetName || '');
+
+  const exploreFasterPayoff = () => {
+    const inputs = p.inputs || {};
+    Haptics.selectionAsync();
+    navigation.getParent()?.navigate('Payoff', {
+      screen: 'PayoffHome',
+      params: {
+        prefill: {
+          origLoan: inputs.loanAmount ?? formatInputWithCommas(String(Math.round(p.loanAmount))),
+          rate: inputs.rate ?? String(p.rate),
+          origYears: String(inputs.term ?? p.term),
+          yearsLeft: String(inputs.term ?? p.term),
+          extra: '200',
+          lump: '0',
+          homeValue: inputs.price ?? formatInputWithCommas(String(Math.round(p.price))),
+          tax: inputs.tax ?? formatInputWithCommas(String(Math.round(p.tax))),
+          taxFreq: inputs.taxFreq ?? 'monthly',
+          insurance: inputs.insurance ?? formatInputWithCommas(String(Math.round(p.insurance))),
+          insuranceFreq: inputs.insuranceFreq ?? 'monthly',
+          hoa: inputs.hoa ?? formatInputWithCommas(String(Math.round(p.hoa))),
+          hoaFreq: inputs.hoaFreq ?? 'monthly',
+          pmi: formatInputWithCommas(String(Math.round(p.pmi || 0))),
+          pmiFreq: 'monthly',
+          zip: inputs.zip ?? '',
+          name: p.presetName ? `${p.presetName} Payoff` : '',
+        },
+        ts: Date.now(),
+      },
+    });
+  };
 
   const am = useMemo(
     () => amortize(p.loanAmount, p.rate, p.term, 0),
@@ -301,6 +333,12 @@ export default function ResultScreen({ route }) {
               centerLabel="/ MONTH"
               animateChanges={false}
             />
+            <View style={styles.balanceNote}>
+              <Ionicons name="wallet" size={16} color={COLORS.accent} />
+              <Text style={styles.balanceNoteText}>
+                Remaining balance after year {cur.year}: {fmtMoney(cur.balance)}
+              </Text>
+            </View>
             <View style={styles.yearNavigatorPanel}>
               <Text style={styles.yearNavigatorHint}>Review your payment year by year</Text>
               <View style={styles.yearNavigator}>
@@ -378,44 +416,6 @@ export default function ResultScreen({ route }) {
                 </Text>
               </View>
             ) : null}
-
-            <View style={styles.balanceNote}>
-              <Ionicons name="wallet" size={16} color={COLORS.accent} />
-              <Text style={styles.balanceNoteText}>
-                Remaining balance after year {cur.year}: {fmtMoney(cur.balance)}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.sectionTitle}>Loan Snapshot</Text>
-          <View style={styles.card}>
-            <Row label="Home Price" value={fmtMoney(p.price)} />
-            <Row
-              label="Down Payment"
-              value={`${fmtMoney(p.down)} (${p.downPct.toFixed(0)}%)`}
-              color={COLORS.green}
-            />
-            <Row label="Loan Amount" value={fmtMoney(p.loanAmount)} />
-            <Row label="Interest Rate" value={`${p.rate.toFixed(2)}%`} color={COLORS.purple} />
-            <Row label="Term" value={`${p.term} years`} />
-            {p.closingCosts > 0 ? (
-              <Row
-                label={
-                  p.closingState ? `Est. Closing Costs (${p.closingState})` : 'Est. Closing Costs'
-                }
-                value={fmtMoney(p.closingCosts)}
-                color={COLORS.purple}
-              />
-            ) : null}
-            {p.pmi > 0 ? (
-              <Row
-                label={pmiRemovalText ? `PMI (removed after ${pmiRemovalText})` : 'PMI'}
-                value={`${fmtMoney(p.pmi)}/mo`}
-                color={COLORS.pink}
-              />
-            ) : p.downPct < 20 ? (
-              <Row label="PMI" value="Excluded" color={COLORS.textMuted} />
-            ) : null}
           </View>
 
           {p.closingCosts > 0 ? (
@@ -444,20 +444,75 @@ export default function ResultScreen({ route }) {
             </>
           ) : null}
 
-          <Text style={styles.sectionTitle}>Over the Life of the Loan</Text>
+          <Text style={styles.sectionTitle}>Loan Snapshot</Text>
           <View style={styles.card}>
+            <Text style={styles.snapshotGroupTitle}>LOAN STRUCTURE</Text>
+            <Row label="Home Price" value={fmtMoney(p.price)} />
+            <Row
+              label="Down Payment"
+              value={`${fmtMoney(p.down)} (${p.downPct.toFixed(0)}%)`}
+              color={COLORS.green}
+            />
+            <Row label="Amount Financed" value={fmtMoney(p.loanAmount)} />
+            <Row label="Interest Rate" value={`${p.rate.toFixed(2)}%`} color={COLORS.purple} />
+            <Row label="Loan Term" value={`${p.term} years`} />
+
+            <View style={styles.snapshotDivider} />
+            <Text style={styles.snapshotGroupTitle}>MONTHLY FINANCING</Text>
+            <Row label="Principal & Interest" value={`${fmtMoney(p.monthlyPI)}/mo`} />
+            {p.pmi > 0 ? (
+              <Row
+                label={pmiRemovalText ? `PMI (removed after ${pmiRemovalText})` : 'PMI'}
+                value={`${fmtMoney(p.pmi)}/mo`}
+                color={COLORS.pink}
+              />
+            ) : p.downPct < 20 ? (
+              <Row label="PMI" value="Excluded" color={COLORS.textMuted} />
+            ) : (
+              <Row label="PMI" value="$0/mo" color={COLORS.green} />
+            )}
+            <View style={styles.monthlySubtotal}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.monthlySubtotalLabel}>TOTAL MONTHLY FINANCING</Text>
+                <Text style={styles.monthlySubtotalNote}>
+                  Does not include property taxes, HOA dues, or other escrow contributions.
+                </Text>
+              </View>
+              <Text style={styles.monthlySubtotalValue}>{fmtMoney(p.monthlyPI + p.pmi)}/mo</Text>
+            </View>
+
+            <View style={styles.snapshotDivider} />
+            <Text style={styles.snapshotGroupTitle}>OVER THE LIFE OF THE LOAN</Text>
+            <Row label="Principal Repaid" value={fmtMoney(p.loanAmount)} />
             <Row
               label="Total Interest Paid"
               value={fmtMoney(am.totalInterest)}
               color={COLORS.red}
               bold
             />
-            <Row label="Total Principal + Interest" value={fmtMoney(am.totalPaid)} bold />
-            <View style={styles.interestBanner}>
-              <Ionicons name="alert-circle" size={18} color={COLORS.amber} />
-              <Text style={styles.interestText}>
-                You'll pay {fmtMoney(am.totalInterest)} in interest — that's{' '}
-                {((am.totalInterest / p.loanAmount) * 100).toFixed(0)}% of your loan amount.
+            <View style={styles.snapshotTotal}>
+              <View>
+                <Text style={styles.snapshotTotalLabel}>TOTAL PRINCIPAL + INTEREST</Text>
+                <Text style={styles.snapshotTotalSub}>over {p.term} years</Text>
+              </View>
+              <Text style={styles.snapshotTotalValue}>{fmtMoney(am.totalPaid)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.snapshotInsight}>
+            <View style={styles.snapshotInsightIcon}>
+              <Ionicons name="information-circle" size={20} color={COLORS.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.snapshotInsightTitle}>How to read your snapshot</Text>
+              <Text style={styles.snapshotInsightText}>
+                After your {fmtMoney(p.down)} down payment, you finance {fmtMoney(p.loanAmount)}.
+                Making the scheduled principal-and-interest payment for {p.term} years adds{' '}
+                {fmtMoney(am.totalInterest)} in interest—about{' '}
+                {((am.totalInterest / p.loanAmount) * 100).toFixed(0)}% of the amount borrowed. The
+                lifetime total excludes closing costs because this estimate treats them as upfront
+                cash. Property tax, insurance, HOA, and PMI are also excluded because they are not
+                part of the financed principal and can change over time.
               </Text>
             </View>
           </View>
@@ -492,11 +547,7 @@ export default function ResultScreen({ route }) {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.tipBtn}
-            activeOpacity={0.8}
-            onPress={() => navigation.getParent()?.navigate('Payoff')}
-          >
+          <TouchableOpacity style={styles.tipBtn} activeOpacity={0.8} onPress={exploreFasterPayoff}>
             <Ionicons name="trending-down" size={20} color={COLORS.teal} />
             <View style={styles.tipCopy}>
               <Text style={styles.tipTitle}>Explore a faster payoff</Text>
@@ -724,21 +775,91 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
-  interestBanner: {
+  snapshotGroupTitle: {
+    color: COLORS.textMuted,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.15,
+    marginBottom: 14,
+  },
+  snapshotDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginTop: 2,
+    marginBottom: 16,
+  },
+  monthlySubtotal: {
     flexDirection: 'row',
-    gap: 10,
-    backgroundColor: COLORS.amber + '18',
-    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     padding: 14,
-    marginTop: 8,
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  monthlySubtotalLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.55,
+  },
+  monthlySubtotalNote: {
+    color: COLORS.textMuted,
+    fontSize: 10.5,
+    fontWeight: '500',
+    lineHeight: 14,
+    marginTop: 4,
+  },
+  monthlySubtotalValue: { color: COLORS.accent, fontSize: 20, fontWeight: '900' },
+  snapshotTotal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    backgroundColor: COLORS.accent + '14',
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '35',
+    padding: 14,
+  },
+  snapshotTotalLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.55,
+  },
+  snapshotTotalSub: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600', marginTop: 3 },
+  snapshotTotalValue: { color: COLORS.accent, fontSize: 20, fontWeight: '900' },
+  snapshotInsight: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: COLORS.accent + '0E',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '28',
+    padding: 16,
+    marginBottom: 18,
     alignItems: 'flex-start',
   },
-  interestText: {
+  snapshotInsightIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: COLORS.accent + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snapshotInsightTitle: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '800' },
+  snapshotInsightText: {
     color: COLORS.textSecondary,
-    fontSize: 13,
-    flex: 1,
+    fontSize: 12.5,
     fontWeight: '500',
-    lineHeight: 19,
+    lineHeight: 18,
+    marginTop: 5,
   },
   actionCard: {
     backgroundColor: COLORS.card,

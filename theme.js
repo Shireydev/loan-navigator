@@ -153,6 +153,7 @@ export function validatePayoffScenario({
 
 export function validateRefinanceScenario({
   balance,
+  balanceLabel = 'Loan balance',
   currentRate,
   originalTerm,
   remainingTerm,
@@ -164,7 +165,7 @@ export function validateRefinanceScenario({
   wholeTerms = false,
 }) {
   return (
-    rangeError('Loan balance', balance, { min: 0, allowZero: false }) ||
+    rangeError(balanceLabel, balance, { min: 0, allowZero: false }) ||
     rangeError('Current interest rate', currentRate, { min: 0, max: 50 }) ||
     rangeError(`Original ${termLabel}`, originalTerm, { min: 1, max: maxTerm }) ||
     rangeError(`Remaining ${termLabel}`, remainingTerm, {
