@@ -1,52 +1,71 @@
 # Loan Navigator Privacy Policy
 
-**Last Updated:** July 17, 2026
+**Last Updated:** July 19, 2026
 
 ## Overview
 
-Loan Navigator is committed to protecting your privacy. This Privacy Policy explains what information the app collects, how it is used, and your choices regarding your information.
+Loan Navigator is an informational loan calculator and educational tool designed to help users estimate and compare mortgage and auto loan scenarios. Whether you're purchasing a home, refinancing an existing loan, paying down debt faster, or financing a vehicle, Loan Navigator provides calculators and planning tools to help you better understand estimated borrowing costs.
+
+All calculations and estimates provided by Loan Navigator are for informational and planning purposes only. Results should not be considered financial, legal, tax, or lending advice and are not loan offers, lending decisions, or guarantees of actual rates, taxes, insurance premiums, closing costs, lender fees, approval, or savings. Users should verify all loan terms, rates, taxes, fees, insurance costs, and other borrowing details directly with their lender or other qualified professionals before making financial decisions.
 
 ## Information We Collect
 
-Loan Navigator is designed to perform loan calculations directly on your device.
+Loan Navigator is designed to perform loan calculations on your device and does not require users to create an account.
 
-The app does **not** require you to create an account and does **not** collect personal information such as your name, email address, phone number, or financial account information.
+The app does **not** collect personal information such as your name, email address, phone number, financial account information, or payment information.
 
-To provide more accurate loan estimates, you may choose to enter a ZIP code. This information is used only to retrieve location-based estimates, such as property tax information, and is not intended to identify you personally.
+You may choose to enter a ZIP code to obtain location-based estimates, such as estimated property taxes, insurance costs, closing costs, lender fees, and Private Mortgage Insurance (PMI). A ZIP code generally represents a geographic area and is not intended to identify you personally.
 
 ## How Information Is Used
 
-Information entered into Loan Navigator is used solely to perform the calculations you request, including:
+Information entered into Loan Navigator is used solely to perform the calculations and estimates you request, including:
 
 - Mortgage payment estimates
-- Refinance analysis
+- Auto loan payment estimates
+- Refinance scenario comparisons
 - Loan payoff acceleration
-- Auto loan calculations
 - Amortization schedules
+- Estimated property taxes
+- Estimated insurance costs
+- Estimated closing costs
+- Estimated lender fees
+- Estimated Private Mortgage Insurance (PMI)
 
-Calculations are performed locally on your device whenever possible.
-
-## Data Sharing
-
-Loan Navigator does not sell or rent your personal information.
-
-The app does not share personal information with third parties for advertising or marketing purposes.
+Loan amounts, home values, interest rates, payment information, and other financial inputs are processed locally on your device whenever possible and are not collected by Loan Navigator.
 
 ## Third-Party Services
 
-When you use the ZIP code lookup feature, Loan Navigator sends the ZIP code you enter to the Zippopotam.us service to identify the associated city and state.
+When you use the ZIP code lookup feature, Loan Navigator sends only the ZIP code you enter to the Zippopotam.us service to determine the associated city and state.
 
-Only the ZIP code is sent for this lookup. Loan amounts, interest rates, property values, payment details, and other financial information entered into the app are not sent to Zippopotam.us.
+Only the ZIP code is transmitted for this lookup. Loan amounts, home values, interest rates, payment information, refinance information, and other financial information entered into the app are **not** transmitted to Zippopotam.us.
 
-Location information returned by the service is combined with tax, insurance, and closing-cost estimate data stored within the app.
+The returned location information is used to estimate applicable property taxes, insurance costs, closing costs, lender fees, and Private Mortgage Insurance (PMI).
+
+## Data Sharing
+
+Loan Navigator does not sell, rent, or share personal information with third parties for advertising, marketing, or profiling purposes.
+
+## Data Retention
+
+Loan Navigator does not maintain user accounts or store users' loan calculations on remote servers.
+
+Information entered into the app remains on your device unless you delete it, clear the app's data, or uninstall the application.
 
 ## Data Security
 
-Reasonable measures are used to protect the information processed by the application. However, no method of electronic transmission or storage is completely secure.
+Reasonable measures are used to protect information processed by the application. However, no method of electronic transmission or electronic storage can be guaranteed to be completely secure.
 
 ## Children's Privacy
 
 Loan Navigator is not directed toward children under the age of 13 and does not knowingly collect personal information from children.
+
+## Financial Disclaimer
+
+Loan Navigator is an informational calculator and educational tool. All calculations and estimates are provided for informational and planning purposes only.
+
+Loan Navigator does **not** provide financial, legal, tax, insurance, or lending advice. Results are estimates only and should not be considered loan offers, lending decisions, guarantees of approval, or guarantees of actual rates, taxes, insurance premiums, fees, or savings.
+
+Users should verify all loan terms, interest rates, taxes, insurance costs, fees, and other financial information directly with their lender or other qualified professionals before making financial decisions.
 
 ## Changes to This Privacy Policy
 
@@ -54,6 +73,6 @@ This Privacy Policy may be updated from time to time. Any changes will be posted
 
 ## Contact
 
-If you have any questions regarding this Privacy Policy, please contact:
+If you have any questions about this Privacy Policy or Loan Navigator, please contact:
 
 **Email:** loannavigation@gmail.com
