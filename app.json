@@ -25,7 +25,7 @@
 
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.wron.app0y11op2ify"
+      "bundleIdentifier": "com.dsappsandproducts.loannavigator"
     },
 
     "android": {
@@ -33,7 +33,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#061735"
       },
-      "package": "com.wron.app0y11op2ify"
+      "package": "com.dsappsandproducts.loannavigator"
     },
 
     "extra": {
