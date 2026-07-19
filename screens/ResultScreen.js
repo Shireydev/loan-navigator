@@ -114,10 +114,11 @@ export default function ResultScreen({ route }) {
           extra: '200',
           lump: '0',
           homeValue: inputs.price ?? formatInputWithCommas(String(Math.round(p.price))),
-          tax: inputs.tax ?? formatInputWithCommas(String(Math.round(p.tax))),
-          taxFreq: inputs.taxFreq ?? 'monthly',
-          insurance: inputs.insurance ?? formatInputWithCommas(String(Math.round(p.insurance))),
-          insuranceFreq: inputs.insuranceFreq ?? 'monthly',
+          tax: inputs.tax ?? formatInputWithCommas(String(Math.round(p.tax * 12))),
+          taxFreq: inputs.taxFreq ?? 'annual',
+          insurance:
+            inputs.insurance ?? formatInputWithCommas(String(Math.round(p.insurance * 12))),
+          insuranceFreq: inputs.insuranceFreq ?? 'annual',
           hoa: inputs.hoa ?? formatInputWithCommas(String(Math.round(p.hoa))),
           hoaFreq: inputs.hoaFreq ?? 'monthly',
           pmi: formatInputWithCommas(String(Math.round(p.pmi || 0))),
@@ -397,6 +398,14 @@ export default function ResultScreen({ route }) {
               ))}
             </View>
 
+            <View style={styles.variableCostNote}>
+              <Ionicons name="information-circle" size={16} color={COLORS.teal} />
+              <Text style={styles.variableCostNoteText}>
+                Property taxes, home insurance premiums, and HOA dues may change over time and can
+                affect your monthly payment.
+              </Text>
+            </View>
+
             {p.pmi > 0 ? (
               <View
                 style={[
@@ -427,9 +436,13 @@ export default function ResultScreen({ route }) {
                   <Ionicons name="document-text" size={18} color={COLORS.purple} />
                   <Text style={styles.closingText}>
                     Approximate one-time closing costs
-                    {p.closingState ? ` for ${p.closingState}` : ''}, estimated from your home
-                    price, {p.term}-year term, and {p.downPct.toFixed(0)}% down payment. Includes
-                    lender, title, and typical government fees. Actual costs vary by lender.
+                    {p.closingState ? ` for ${p.closingState}` : ''}. Planning range{' '}
+                    {fmtMoney(p.closingCostsLow ?? p.closingCosts * 0.75)}–
+                    {fmtMoney(p.closingCostsHigh ?? p.closingCosts * 1.25)} based on{' '}
+                    {p.closingCostSource || 'a location-based planning fallback'}
+                    {p.closingCostSourceYear ? ` ${p.closingCostSourceYear}` : ''}. Actual lender,
+                    title, prepaid escrow, points, and government charges vary; use the Loan
+                    Estimate from your lender for a final comparison.
                   </Text>
                 </View>
                 <View style={styles.closingBreak}>
@@ -653,6 +666,22 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.border,
   },
   legendMain: { flex: 1, marginRight: 16 },
+  variableCostNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: COLORS.teal + '10',
+    borderRadius: 11,
+    padding: 11,
+    marginTop: 14,
+  },
+  variableCostNoteText: {
+    color: COLORS.textSecondary,
+    fontSize: 11.5,
+    fontWeight: '500',
+    lineHeight: 16,
+    flex: 1,
+  },
   bdLabel: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600', marginBottom: 8 },
   barTrack: {
     height: 5,

@@ -29,10 +29,9 @@ import {
   validateMortgageEstimate,
 } from '../theme';
 import { lookupTaxByZip } from '../taxApi';
+import { estimateClosingCosts, estimateHomeInsurance, estimatePropertyTax } from '../costEstimator';
 import { SCENARIO_TYPES } from '../savedScenarios';
 import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
-
-const TERMS = [15, 20, 30];
 
 // Frequency options for the "monthly extras". The user can enter a value at
 // any cadence and we convert it to a monthly-equivalent for the payment math.
@@ -80,7 +79,7 @@ function ExtraField({ label, value, onChangeValue, freq, onChangeFreq, accentCol
         <View style={styles.recRow}>
           <Ionicons name="sparkles" size={13} color={accentColor} />
           <Text style={[styles.recText, { color: accentColor }]}>
-            Recommended: {fmtMoney(recommended)}/mo · tap to apply
+            Recommended: {fmtMoney(recommended)}/yr · tap to apply
           </Text>
           <TouchableOpacity
             style={[styles.recApply, { borderColor: accentColor }]}
@@ -88,7 +87,7 @@ function ExtraField({ label, value, onChangeValue, freq, onChangeFreq, accentCol
             onPress={() => {
               Haptics.selectionAsync();
               onChangeValue(formatInputWithCommas(String(Math.round(recommended))));
-              onChangeFreq('monthly');
+              onChangeFreq('annual');
             }}
           >
             <Text style={[styles.recApplyText, { color: accentColor }]}>Apply</Text>
@@ -117,11 +116,11 @@ export default function EstimatorScreen() {
   const [price, setPrice] = useState(formatInputWithCommas('450000'));
   const [down, setDown] = useState(formatInputWithCommas('90000'));
   const [rate, setRate] = useState('6.75');
-  const [term, setTerm] = useState(30);
-  const [tax, setTax] = useState(formatInputWithCommas('320'));
-  const [taxFreq, setTaxFreq] = useState('monthly');
-  const [insurance, setInsurance] = useState(formatInputWithCommas('130'));
-  const [insuranceFreq, setInsuranceFreq] = useState('monthly');
+  const [term, setTerm] = useState('30');
+  const [tax, setTax] = useState(formatInputWithCommas('3840'));
+  const [taxFreq, setTaxFreq] = useState('annual');
+  const [insurance, setInsurance] = useState(formatInputWithCommas('1560'));
+  const [insuranceFreq, setInsuranceFreq] = useState('annual');
   const [hoa, setHoa] = useState('0');
   const [hoaFreq, setHoaFreq] = useState('monthly');
   const [includePmi, setIncludePmi] = useState(true);
@@ -134,8 +133,9 @@ export default function EstimatorScreen() {
   const [zipLoading, setZipLoading] = useState(false);
   const [zipError, setZipError] = useState('');
   const [zipInfo, setZipInfo] = useState(null); // full tax breakdown object
-  const [recTax, setRecTax] = useState(null); // recommended monthly tax
-  const [recIns, setRecIns] = useState(null); // recommended monthly insurance
+  const [recTax, setRecTax] = useState(null); // recommended annual tax
+  const [recIns, setRecIns] = useState(null); // recommended annual insurance
+  const [recInsDetails, setRecInsDetails] = useState(null);
 
   const fmt = (v) => formatInputWithCommas(String(v ?? ''));
 
@@ -145,14 +145,33 @@ export default function EstimatorScreen() {
         const raw = await AsyncStorage.getItem(STORAGE_KEYS.DEFAULTS);
         if (raw) {
           const d = JSON.parse(raw);
+          const needsAnnualCadenceMigration = (d.costCadenceVersion ?? 0) < 2;
+          const storedTaxFreq = d.taxFreq ?? 'monthly';
+          const storedInsuranceFreq = d.insuranceFreq ?? 'monthly';
+          const storedTax = fmt(d.tax ?? '320');
+          const storedInsurance = fmt(d.insurance ?? '130');
           setPrice(fmt(d.price ?? '450000'));
           setDown(fmt(d.down ?? '90000'));
           setRate(fmt(d.rate ?? '6.75'));
-          setTerm(d.term ?? 30);
-          setTax(fmt(d.tax ?? '320'));
-          setTaxFreq(d.taxFreq ?? 'monthly');
-          setInsurance(fmt(d.insurance ?? '130'));
-          setInsuranceFreq(d.insuranceFreq ?? 'monthly');
+          setTerm(String(d.term ?? 30));
+          setTax(
+            needsAnnualCadenceMigration && storedTaxFreq === 'monthly'
+              ? fmt(parseLoanNumber(storedTax) * 12)
+              : storedTax,
+          );
+          setTaxFreq(
+            needsAnnualCadenceMigration && storedTaxFreq === 'monthly' ? 'annual' : storedTaxFreq,
+          );
+          setInsurance(
+            needsAnnualCadenceMigration && storedInsuranceFreq === 'monthly'
+              ? fmt(parseLoanNumber(storedInsurance) * 12)
+              : storedInsurance,
+          );
+          setInsuranceFreq(
+            needsAnnualCadenceMigration && storedInsuranceFreq === 'monthly'
+              ? 'annual'
+              : storedInsuranceFreq,
+          );
           setHoa(fmt(d.hoa ?? '0'));
           setHoaFreq(d.hoaFreq ?? 'monthly');
           if (typeof d.includePmi === 'boolean') setIncludePmi(d.includePmi);
@@ -170,11 +189,11 @@ export default function EstimatorScreen() {
       setPrice(fmt(i.price ?? String(r.price ?? '450000')));
       setDown(fmt(i.down ?? '90000'));
       setRate(fmt(i.rate ?? String(r.rate ?? '6.75')));
-      setTerm(i.term ?? r.term ?? 30);
-      setTax(fmt(i.tax ?? '320'));
-      setTaxFreq(i.taxFreq ?? 'monthly');
-      setInsurance(fmt(i.insurance ?? '130'));
-      setInsuranceFreq(i.insuranceFreq ?? 'monthly');
+      setTerm(String(i.term ?? r.term ?? 30));
+      setTax(fmt(i.tax ?? '3840'));
+      setTaxFreq(i.taxFreq ?? 'annual');
+      setInsurance(fmt(i.insurance ?? '1560'));
+      setInsuranceFreq(i.insuranceFreq ?? 'annual');
       setHoa(fmt(i.hoa ?? '0'));
       setHoaFreq(i.hoaFreq ?? 'monthly');
       if (typeof i.includePmi === 'boolean') setIncludePmi(i.includePmi);
@@ -190,6 +209,7 @@ export default function EstimatorScreen() {
   const priceN = num(price);
   const downN = num(down);
   const rateN = num(rate);
+  const termN = num(term);
   const taxN = num(tax);
   const insuranceN = num(insurance);
   const hoaN = num(hoa);
@@ -199,12 +219,12 @@ export default function EstimatorScreen() {
     price: priceN,
     down: downN,
     rate: rateN,
-    termYears: term,
+    termYears: termN,
     propertyTax: taxN,
     insurance: insuranceN,
     hoa: hoaN,
   });
-  const pi = !validationError && loanAmount > 0 ? monthlyPI(loanAmount, rateN, term) : 0;
+  const pi = !validationError && loanAmount > 0 ? monthlyPI(loanAmount, rateN, termN) : 0;
   const pmiEligible = downPct < 20 && loanAmount > 0;
   const pmi = pmiEligible && includePmi ? (loanAmount * 0.007) / 12 : 0;
 
@@ -216,34 +236,23 @@ export default function EstimatorScreen() {
   const total = pi + taxMonthly + insuranceMonthly + pmi + hoaMonthly;
   const otherMonthly = taxMonthly + insuranceMonthly + pmi + hoaMonthly;
 
-  // ---- Approximate closing costs ----
-  // Based on home price, down payment, loan term, and location (state rate).
-  const closingRatePct = zipInfo?.closingRate != null ? zipInfo.closingRate : 3.0;
-  // Term adjustment: 15yr slightly higher rate, 30yr baseline.
-  const termAdj = term <= 15 ? 1.08 : term <= 20 ? 1.04 : 1.0;
-  // Down payment adjustment: larger down payments reduce lender/points fees a bit.
-  const downAdj = downPct >= 20 ? 0.95 : downPct >= 10 ? 1.0 : 1.05;
-  const closingCosts = priceN > 0 ? priceN * (closingRatePct / 100) * termAdj * downAdj : 0;
+  const closingEstimate = estimateClosingCosts(zipInfo, {
+    homePrice: priceN,
+    loanAmount,
+    purpose: 'purchase',
+  });
+  const closingCosts = closingEstimate.estimate;
 
-  // Compute recommended monthly tax and insurance from the resolved county
-  // tax rate and the current home price.
+  // Compute recommended annual tax and insurance from the resolved county tax
+  // rate and the current home price.
   const computeRecommendations = (info, homePrice) => {
     const price0 = homePrice > 0 ? homePrice : 450000;
 
-    // Use the county effective rate returned by the tax API, with the state
-    // average available as a fallback.
-    const effRate = info.effectiveRate != null ? info.effectiveRate : info.stateRate;
-
-    const annualTax = price0 * (effRate / 100);
-    setRecTax(annualTax / 12);
-
-    if (info.insBase != null) {
-      const scale = Math.max(0.6, Math.min(2.5, price0 / 400000));
-
-      setRecIns((info.insBase * scale) / 12);
-    } else {
-      setRecIns((price0 * 0.0035) / 12);
-    }
+    const taxEstimate = estimatePropertyTax(info, price0);
+    const insuranceEstimate = estimateHomeInsurance(info, price0);
+    setRecTax(taxEstimate.annualEstimate);
+    setRecIns(insuranceEstimate.annualEstimate);
+    setRecInsDetails(insuranceEstimate);
   };
 
   // Recompute recommendations when the price changes (if a ZIP was resolved).
@@ -280,11 +289,11 @@ export default function EstimatorScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (recTax != null) {
       setTax(formatInputWithCommas(String(Math.round(recTax))));
-      setTaxFreq('monthly');
+      setTaxFreq('annual');
     }
     if (recIns != null) {
       setInsurance(formatInputWithCommas(String(Math.round(recIns))));
-      setInsuranceFreq('monthly');
+      setInsuranceFreq('annual');
     }
   };
 
@@ -300,10 +309,11 @@ export default function EstimatorScreen() {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const payload = {
+      costCadenceVersion: 2,
       price,
       down,
       rate,
-      term,
+      term: termN,
       tax,
       taxFreq,
       insurance,
@@ -319,7 +329,7 @@ export default function EstimatorScreen() {
     navigation.navigate('Result', {
       loanAmount,
       rate: num(rate),
-      term,
+      term: termN,
       monthlyPI: pi,
       tax: taxMonthly,
       insurance: insuranceMonthly,
@@ -330,6 +340,10 @@ export default function EstimatorScreen() {
       down: downN,
       downPct,
       closingCosts,
+      closingCostsLow: closingEstimate.low,
+      closingCostsHigh: closingEstimate.high,
+      closingCostSource: closingEstimate.source,
+      closingCostSourceYear: closingEstimate.sourceYear,
       closingState: zipInfo
         ? zipInfo.countyDisplay
           ? `${zipInfo.countyDisplay}, ${zipInfo.stateCode}`
@@ -405,29 +419,26 @@ export default function EstimatorScreen() {
           <View style={styles.basicsCard}>
             <InputField label="Home Price" value={price} onChangeText={setPrice} prefix="$" />
             <InputField label="Down Payment" value={down} onChangeText={setDown} prefix="$" />
-            <InputField
-              label="Interest Rate"
-              value={rate}
-              onChangeText={setRate}
-              suffix="%"
-              accentColor={COLORS.purple}
-            />
-
-            <Text style={styles.label}>Loan Term</Text>
-            <View style={styles.termRow}>
-              {TERMS.map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  activeOpacity={0.8}
-                  style={[styles.termBtn, term === t && styles.termBtnActive]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setTerm(t);
-                  }}
-                >
-                  <Text style={[styles.termText, term === t && styles.termTextActive]}>{t} yr</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.loanTermsRow}>
+              <View style={{ flex: 1 }}>
+                <InputField
+                  label="Interest Rate"
+                  value={rate}
+                  onChangeText={setRate}
+                  suffix="%"
+                  accentColor={COLORS.purple}
+                />
+              </View>
+              <View style={{ width: 12 }} />
+              <View style={{ flex: 1 }}>
+                <InputField
+                  label="Loan Term"
+                  value={term}
+                  onChangeText={setTerm}
+                  suffix="yr"
+                  accentColor={COLORS.accent}
+                />
+              </View>
             </View>
           </View>
 
@@ -524,22 +535,28 @@ export default function EstimatorScreen() {
                       <View style={styles.zipRecCol}>
                         <Text style={styles.zipRecLabel}>Est. Property Tax</Text>
                         <Text style={[styles.zipRecValue, { color: COLORS.amber }]}>
-                          {recTax != null ? `${fmtMoney(recTax)}/mo` : '—'}
+                          {recTax != null ? `${fmtMoney(recTax)}/yr` : '—'}
                         </Text>
                         <Text style={styles.zipRecNote}>
-                          {zipInfo.effectiveRate.toFixed(2)}% of home value
+                          {zipInfo.effectiveRate.toFixed(2)}% ·{' '}
+                          {zipInfo.hasCountyData ? 'county estimate' : 'state fallback'}
                         </Text>
                       </View>
                       <View style={styles.zipRecCol}>
                         <Text style={styles.zipRecLabel}>Est. Home Insurance</Text>
                         <Text style={[styles.zipRecValue, { color: COLORS.teal }]}>
-                          {recIns != null ? `${fmtMoney(recIns)}/mo` : '—'}
+                          {recIns != null ? `${fmtMoney(recIns)}/yr` : '—'}
                         </Text>
-                        <Text style={styles.zipRecNote}>{zipInfo.state} avg</Text>
+                        <Text style={styles.zipRecNote}>
+                          {recInsDetails?.isCountyEstimate
+                            ? `${fmtMoney(recInsDetails.annualLow)}–${fmtMoney(
+                                recInsDetails.annualHigh,
+                              )} county range`
+                            : `${zipInfo.stateCode} state fallback`}
+                        </Text>
                       </View>
                     </View>
 
-                    {/* Closing costs estimate derived from ZIP + price + term + down */}
                     <View style={styles.closingCard}>
                       <View style={styles.closingHead}>
                         <View
@@ -553,8 +570,9 @@ export default function EstimatorScreen() {
                         </Text>
                       </View>
                       <Text style={styles.closingNote}>
-                        ~{(closingRatePct * termAdj * downAdj).toFixed(1)}% of home price · based on{' '}
-                        {zipInfo.state}, {term}yr term, {downPct.toFixed(0)}% down.
+                        Planning range {fmtMoney(closingEstimate.low)}–
+                        {fmtMoney(closingEstimate.high)} · {closingEstimate.source}
+                        {closingEstimate.sourceYear ? ` ${closingEstimate.sourceYear}` : ''}.
                       </Text>
                     </View>
 
@@ -567,8 +585,10 @@ export default function EstimatorScreen() {
                       <Text style={styles.applyAllText}>Apply tax & insurance to my estimate</Text>
                     </TouchableOpacity>
                     <Text style={styles.zipDisclaimer}>
-                      Estimates are based on {zipInfo.state} area data. Actual amounts vary —
-                      override below for accuracy.
+                      Property tax and insurance use {zipInfo.source}
+                      {zipInfo.sourceYear ? ` ${zipInfo.sourceYear}` : ''}. Insurance reflects
+                      county costs for mortgaged homes when available; replace estimates with a tax
+                      bill, insurer quote, or lender disclosure when available.
                     </Text>
                   </View>
                 ) : null}
@@ -671,6 +691,13 @@ export default function EstimatorScreen() {
                   thumbColor="#fff"
                   ios_backgroundColor={COLORS.surfaceElevated}
                 />
+              </View>
+              <View style={styles.pmiProgramNote}>
+                <Ionicons name="information-circle" size={15} color={COLORS.teal} />
+                <Text style={styles.pmiProgramNoteText}>
+                  VA loans do not require PMI, and some other loan programs follow different
+                  mortgage-insurance rules. Confirm the requirements with your lender.
+                </Text>
               </View>
             </View>
           ) : null}
@@ -809,27 +836,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     marginBottom: 10,
   },
-  label: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 10,
-    marginLeft: 2,
-  },
-  termRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  termBtn: {
-    flex: 1,
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceElevated,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  termBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
-  termText: { color: COLORS.textSecondary, fontWeight: '700', fontSize: 15 },
-  termTextActive: { color: '#fff' },
+  loanTermsRow: { flexDirection: 'row' },
   zipCard: {
     backgroundColor: COLORS.card,
     borderRadius: 18,
@@ -1045,6 +1052,22 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 3,
     lineHeight: 17,
+  },
+  pmiProgramNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: COLORS.teal + '10',
+    borderRadius: 11,
+    padding: 11,
+    marginTop: 13,
+  },
+  pmiProgramNoteText: {
+    color: COLORS.textSecondary,
+    fontSize: 11.5,
+    fontWeight: '500',
+    lineHeight: 16,
+    flex: 1,
   },
   bottomAction: { marginTop: 4, paddingTop: 4, paddingBottom: 8 },
   calcBtn: {

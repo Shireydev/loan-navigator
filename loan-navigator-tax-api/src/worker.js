@@ -1,4 +1,6 @@
-const DATASET_VERSION = 'acs2024-v1';
+const DATASET_VERSION = 'acs2024-v2';
+const LEGACY_DATASET_VERSION = 'acs2024-v1';
+const CLOSING_DATASET_VERSION = 'hmda2025-v1';
 const SUCCESS_CACHE_SECONDS = 60 * 60 * 24 * 7;
 const NOT_FOUND_CACHE_SECONDS = 60 * 60 * 24;
 
@@ -106,9 +108,30 @@ async function handleTaxLookup(url, env, corsHeaders, ctx) {
 		 */
 		const bucketNumber = countyFips.charAt(0);
 
-		const bucket = await env.TAX_DATA.get(`tax:${DATASET_VERSION}:${bucketNumber}`, 'json');
+		const [costBucket, closingBucket] = await Promise.all([
+			env.TAX_DATA.get(`cost:${DATASET_VERSION}:${bucketNumber}`, 'json'),
+			env.TAX_DATA.get(`closing:${CLOSING_DATASET_VERSION}:${bucketNumber}`, 'json'),
+		]);
 
-		let taxRecord = bucket?.[countyFips] ?? null;
+		const baseCostRecord = costBucket?.[countyFips] ?? null;
+		const closingRecord = closingBucket?.[countyFips] ?? null;
+		let costRecord = baseCostRecord
+			? {
+					...baseCostRecord,
+					...(closingRecord ?? {}),
+				}
+			: null;
+		let taxRecord = costRecord;
+
+		/*
+		 * Keep serving the prior property-tax-only dataset during a rolling
+		 * deployment. This lets the Worker code and KV data be published in
+		 * either order without breaking ZIP lookups.
+		 */
+		if (!taxRecord) {
+			const legacyBucket = await env.TAX_DATA.get(`tax:${LEGACY_DATASET_VERSION}:${bucketNumber}`, 'json');
+			taxRecord = legacyBucket?.[countyFips] ?? null;
+		}
 
 		/*
 		 * Keep support for the Franklin County development record
@@ -145,6 +168,8 @@ async function handleTaxLookup(url, env, corsHeaders, ctx) {
 				countyFips,
 				taxDataAvailable: true,
 				taxData: taxRecord,
+				costDataAvailable: Boolean(costRecord),
+				costData: costRecord,
 				locationSource: 'HUD-USPS Crosswalk',
 			},
 			200,

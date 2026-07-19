@@ -5,8 +5,8 @@
 // The Worker resolves the ZIP code through HUD, identifies the county FIPS,
 // and reads the county tax record from Cloudflare KV.
 //
-// State tables remain available as fallbacks for temporary API or network
-// failures and for insurance and closing-cost estimates.
+// State tables remain available only as transparent fallbacks for temporary
+// API/network failures and counties without a usable public-data record.
 
 // Effective state-level property-tax rate.
 // Values are percentages of home value.
@@ -241,6 +241,7 @@ export const STATE_CLOSING_RATE = {
 };
 
 const TAX_API_URL = 'https://loan-navigator-tax-api.loannavigation.workers.dev/';
+const COST_DATA_VERSION = 'acs2024-v2-hmda2025-v1';
 
 async function getFallbackLocation(zip) {
   try {
@@ -286,7 +287,11 @@ export async function lookupTaxByZip(zip) {
   let apiData = null;
 
   try {
-    const requestUrl = `${TAX_API_URL}?zip=${encodeURIComponent(clean)}`;
+    // The public data version also changes the browser/CDN URL. This prevents
+    // a previously cached v1 response from masking a newly deployed dataset.
+    const requestUrl =
+      `${TAX_API_URL}?zip=${encodeURIComponent(clean)}` +
+      `&data=${encodeURIComponent(COST_DATA_VERSION)}`;
 
     const response = await fetch(requestUrl, {
       headers: {
@@ -296,7 +301,8 @@ export async function lookupTaxByZip(zip) {
 
     apiData = await response.json().catch(() => null);
 
-    const workerRate = Number(apiData?.taxData?.effectiveTaxRate);
+    const costRecord = apiData?.costData || apiData?.taxData;
+    const workerRate = Number(costRecord?.effectiveTaxRate);
 
     if (
       response.ok &&
@@ -317,7 +323,7 @@ export async function lookupTaxByZip(zip) {
        */
       const effectiveRate = workerRate * 100;
 
-      const county = apiData.taxData.county || apiData.county || '';
+      const county = costRecord.county || apiData.county || '';
 
       const city = apiData.city || '';
 
@@ -341,21 +347,27 @@ export async function lookupTaxByZip(zip) {
         hasCountyData: true,
         localAdjPct: 0,
 
-        insBase: STATE_INS_BASE[stateCode] ?? null,
+        insurance: costRecord.insurance ?? null,
+
+        insBase: costRecord.insurance?.annualEstimate ?? STATE_INS_BASE[stateCode] ?? null,
 
         closingRate: STATE_CLOSING_RATE[stateCode] ?? 3.0,
 
-        source: apiData.taxData.source || 'Loan Navigator Tax API',
+        source: costRecord.source || 'Loan Navigator Tax API',
 
-        sourceYear: apiData.taxData.sourceYear ?? null,
+        sourceYear: costRecord.sourceYear ?? null,
 
-        confidenceLevel: apiData.taxData.confidenceLevel || 'Baseline',
+        confidenceLevel: costRecord.confidenceLevel || 'Baseline',
 
-        engineVersion: apiData.taxData.engineVersion || null,
+        engineVersion: costRecord.engineVersion || null,
 
-        medianTaxBill: apiData.taxData.medianTaxBill ?? null,
+        medianTaxBill: costRecord.medianTaxBill ?? null,
 
-        medianHomeValue: apiData.taxData.medianHomeValue ?? null,
+        medianHomeValue: costRecord.medianHomeValue ?? null,
+
+        closingCosts: costRecord.closingCosts ?? null,
+        closingCostSource: costRecord.closingCostSource ?? null,
+        closingCostSourceYear: costRecord.closingCostSourceYear ?? null,
       };
     }
   } catch (error) {
@@ -409,6 +421,8 @@ export async function lookupTaxByZip(zip) {
 
     insBase: STATE_INS_BASE[stateCode] ?? null,
 
+    insurance: null,
+
     closingRate: STATE_CLOSING_RATE[stateCode] ?? 3.0,
 
     source: 'State-average fallback',
@@ -417,5 +431,8 @@ export async function lookupTaxByZip(zip) {
     engineVersion: null,
     medianTaxBill: null,
     medianHomeValue: null,
+    closingCosts: null,
+    closingCostSource: null,
+    closingCostSourceYear: null,
   };
 }

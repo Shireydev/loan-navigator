@@ -30,6 +30,7 @@ import {
   validateRefinanceScenario,
 } from '../theme';
 import { lookupTaxByZip } from '../taxApi';
+import { estimateClosingCosts } from '../costEstimator';
 import { SCENARIO_TYPES } from '../savedScenarios';
 import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 import { getLatestPayoffLoan } from '../components/mortgageLoanHandoff';
@@ -80,7 +81,7 @@ export default function RefinanceScreen() {
       setCurRate(i.curRate ?? '7.25');
       setOrigYears(i.origYears ?? '30');
       setCurYears(i.curYears ?? '27');
-      setManualBalance(null);
+      setManualBalance(i.balanceAdjusted && i.currentBalance != null ? i.currentBalance : null);
       setNewTerm(i.curYears ?? '30');
       setZip(i.zip ?? '');
       setZipError('');
@@ -163,7 +164,7 @@ export default function RefinanceScreen() {
     setCurRate(i.curRate ?? '7.25');
     setOrigYears(i.origYears ?? '30');
     setCurYears(i.curYears ?? '27');
-    setManualBalance(null);
+    setManualBalance(i.balanceAdjusted && i.currentBalance != null ? i.currentBalance : null);
     setNewRate(i.newRate ?? '6.00');
     setNewTerm(i.newTerm ?? i.curYears ?? '30');
     setCosts(i.costs ?? formatInputWithCommas('10000'));
@@ -233,18 +234,12 @@ export default function RefinanceScreen() {
   const currentPayoffMonths = curAm?.months ?? Math.round(yearsLeftN * 12);
   const newPayoffMonths = newAm?.months ?? Math.round(newTermN * 12);
 
-  // ---- ZIP-based closing cost estimate for the NEW refinance loan ----
-  // Refinances have lower closing costs than a purchase (no transfer tax /
-  // owner's title in most cases), so we apply a ~65% factor to the state
-  // purchase closing rate, then scale by the refinanced balance.
-  const refiClosingRate = zipInfo ? zipInfo.closingRate * 0.65 : null;
-  // Longer new terms mean slightly higher origination as a share; short terms
-  // carry a bump too. Baseline at 30yr.
-  const refiTermAdj = newTermN <= 15 ? 1.06 : newTermN <= 20 ? 1.03 : 1.0;
+  const closingEstimate = estimateClosingCosts(zipInfo, {
+    loanAmount: currentBalance,
+    purpose: 'refinance',
+  });
   const estRefiClosing =
-    !validationError && zipInfo && currentBalance > 0
-      ? currentBalance * (refiClosingRate / 100) * refiTermAdj
-      : 0;
+    !validationError && zipInfo && currentBalance > 0 ? closingEstimate.estimate : 0;
 
   const lookupZip = async () => {
     const clean = zip.replace(/[^0-9]/g, '');
@@ -523,9 +518,9 @@ export default function RefinanceScreen() {
                         </Text>
                       </View>
                       <Text style={styles.closingNote}>
-                        ~{(refiClosingRate * refiTermAdj).toFixed(1)}% of your{' '}
-                        {fmtMoney(currentBalance)} balance · based on {zipInfo.state} refinance fees
-                        and a {newTermN}-year new term.
+                        Planning range {fmtMoney(closingEstimate.low)}–
+                        {fmtMoney(closingEstimate.high)} · {closingEstimate.source}
+                        {closingEstimate.sourceYear ? ` ${closingEstimate.sourceYear}` : ''}.
                       </Text>
                     </View>
 

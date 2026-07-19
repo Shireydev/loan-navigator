@@ -1,0 +1,107 @@
+[
+  {
+    "countyFips": "02188",
+    "county": null,
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "15005",
+    "county": null,
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "48261",
+    "county": null,
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72095",
+    "county": null,
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "02013",
+    "county": "Aleutians East Borough",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "02050",
+    "county": "Bethel Census Area",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "02164",
+    "county": null,
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "02240",
+    "county": "Southeast Fairbanks Census Area",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "46102",
+    "county": "Oglala Lakota County",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72015",
+    "county": "Arroyo Municipio",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72045",
+    "county": "Comerío Municipio",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72049",
+    "county": "Culebra Municipio",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72054",
+    "county": "Florida Municipio",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72055",
+    "county": null,
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72059",
+    "county": "Guayanilla Municipio",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72093",
+    "county": "Maricao Municipio",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72109",
+    "county": "Patillas Municipio",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72115",
+    "county": null,
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "72147",
+    "county": "Vieques Municipio",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "48269",
+    "county": "King County",
+    "reason": "Missing aggregate tax or value data"
+  },
+  {
+    "countyFips": "48301",
+    "county": null,
+    "reason": "Missing aggregate tax or value data"
+  }
+]

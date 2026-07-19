@@ -42,7 +42,6 @@ const MODES = [
   { key: 'refinance', label: 'Refinance', icon: 'swap-horizontal' },
 ];
 
-const TERMS = [36, 48, 60, 72, 84];
 const PRESETS = [50, 100, 150, 250];
 const LUMP_PRESETS = [1000, 2500, 5000, 10000];
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
@@ -65,7 +64,7 @@ export default function CarScreen() {
   const [trade, setTrade] = useState('0');
   const [salesTax, setSalesTax] = useState('7');
   const [rate, setRate] = useState('6.90');
-  const [term, setTerm] = useState(60);
+  const [term, setTerm] = useState('60');
   const [taxZip, setTaxZip] = useState('');
   const [taxLookupLoading, setTaxLookupLoading] = useState(false);
   const [taxLookupError, setTaxLookupError] = useState('');
@@ -115,7 +114,7 @@ export default function CarScreen() {
       setTrade(i.trade ?? '0');
       setSalesTax(i.salesTax ?? '7');
       setRate(i.rate ?? '6.90');
-      setTerm(i.term ?? 60);
+      setTerm(String(i.term ?? 60));
       setTaxZip(i.taxZip ?? '');
       setTaxLookupError('');
       setTaxLookupResult(null);
@@ -160,8 +159,8 @@ export default function CarScreen() {
       const purchaseLoan = formatInputWithCommas(String(Math.round(amountFinanced)));
       setPBalance(purchaseLoan);
       setPRate(rate);
-      setPOriginalTerm(String(term));
-      setPMonths(String(term));
+      setPOriginalTerm(String(termN));
+      setPMonths(String(termN));
       setPExtra('100');
       setPLump('0');
       setPayoffFromPurchase(true);
@@ -171,10 +170,10 @@ export default function CarScreen() {
       const purchaseLoan = formatInputWithCommas(String(Math.round(amountFinanced)));
       setRBalance(purchaseLoan);
       setRCurRate(rate);
-      setROriginalTerm(String(term));
-      setRMonths(String(term));
+      setROriginalTerm(String(termN));
+      setRMonths(String(termN));
       setRManualBalance(null);
-      setRNewTerm(String(term));
+      setRNewTerm(String(termN));
       setRefinanceFromPurchase(true);
     }
 
@@ -190,19 +189,20 @@ export default function CarScreen() {
   const tradeN = num(trade);
   const salesTaxN = num(salesTax);
   const rateN = num(rate);
+  const termN = num(term);
   const purchaseValidationError = validateAutoPurchase({
     price: priceN,
     down: downN,
     trade: tradeN,
     salesTax: salesTaxN,
     rate: rateN,
-    termMonths: term,
+    termMonths: termN,
   });
   const taxableAmount = purchaseValidationError ? 0 : Math.max(priceN - tradeN, 0);
   const taxAmt = purchaseValidationError ? 0 : taxableAmount * (salesTaxN / 100);
   const amountFinanced = purchaseValidationError ? 0 : Math.max(taxableAmount + taxAmt - downN, 0);
-  const carPay = amountFinanced > 0 ? monthlyPI(amountFinanced, rateN, term / 12) : 0;
-  const purAm = amountFinanced > 0 ? amortize(amountFinanced, rateN, term / 12, 0) : null;
+  const carPay = amountFinanced > 0 ? monthlyPI(amountFinanced, rateN, termN / 12) : 0;
+  const purAm = amountFinanced > 0 ? amortize(amountFinanced, rateN, termN / 12, 0) : null;
   const totalCost = purAm ? downN + tradeN + amountFinanced + purAm.totalInterest : 0;
 
   const lookupPurchaseTax = async () => {
@@ -396,7 +396,7 @@ export default function CarScreen() {
       salesTaxAmount: taxAmt,
       amountFinanced,
       rate: rateN,
-      term,
+      term: termN,
       monthlyPayment: carPay,
       totalInterest: purAm.totalInterest,
       totalLoanPayments: purAm.totalPaid,
@@ -558,7 +558,8 @@ export default function CarScreen() {
               <View style={styles.purchaseHeaderFact}>
                 <Text style={styles.purchaseHeaderFactLabel}>Rate & term</Text>
                 <Text style={styles.purchaseHeaderFactValue}>
-                  {Number.isFinite(rateN) ? rateN.toFixed(2) : '—'}% · {term} months
+                  {Number.isFinite(rateN) ? rateN.toFixed(2) : '—'}% ·{' '}
+                  {Number.isFinite(termN) ? termN : '—'} months
                 </Text>
               </View>
             </View>
@@ -661,24 +662,13 @@ export default function CarScreen() {
                     />
                   </View>
                 </View>
-                <Text style={styles.label}>Loan Term</Text>
-                <View style={styles.termRow}>
-                  {TERMS.map((t) => (
-                    <TouchableOpacity
-                      key={t}
-                      activeOpacity={0.8}
-                      style={[styles.termBtn, term === t && styles.termBtnActive]}
-                      onPress={() => {
-                        Haptics.selectionAsync();
-                        setTerm(t);
-                      }}
-                    >
-                      <Text style={[styles.termText, term === t && styles.termTextActive]}>
-                        {t}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <InputField
+                  label="Loan Term"
+                  value={term}
+                  onChangeText={setTerm}
+                  suffix="mo"
+                  accentColor={COLORS.accent}
+                />
               </View>
 
               <Text style={styles.sectionTitle}>Sales Tax</Text>
@@ -1393,20 +1383,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   resetEstimateText: { color: COLORS.accent, fontSize: 12, fontWeight: '700' },
-  termRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  termBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: COLORS.surfaceElevated,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  termBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
-  termText: { color: COLORS.textSecondary, fontWeight: '700', fontSize: 14 },
-  termTextActive: { color: '#fff' },
   presetRow: { flexDirection: 'row', gap: 10, marginTop: 2, marginBottom: 8 },
   preset: {
     flex: 1,

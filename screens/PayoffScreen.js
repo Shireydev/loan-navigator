@@ -20,7 +20,6 @@ import InputField, { ValidationBanner } from '../components/InputField';
 import {
   COLORS,
   monthlyPI,
-  amortize,
   amortizeWithPayment,
   fmtMoney,
   formatInputWithCommas,
@@ -30,6 +29,7 @@ import {
 } from '../theme';
 import { SCENARIO_TYPES } from '../savedScenarios';
 import { lookupTaxByZip } from '../taxApi';
+import { estimateHomeInsurance, estimatePropertyTax } from '../costEstimator';
 import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 import { publishPayoffLoan } from '../components/mortgageLoanHandoff';
 
@@ -76,7 +76,7 @@ function ExtraField({ label, value, onChangeValue, freq, onChangeFreq, accentCol
         <View style={styles.recRow}>
           <Ionicons name="sparkles" size={13} color={accentColor} />
           <Text style={[styles.recText, { color: accentColor }]}>
-            Recommended: {fmtMoney(recommended)}/mo
+            Recommended: {fmtMoney(recommended)}/yr
           </Text>
           <TouchableOpacity
             style={[styles.recApply, { borderColor: accentColor }]}
@@ -84,7 +84,7 @@ function ExtraField({ label, value, onChangeValue, freq, onChangeFreq, accentCol
             onPress={() => {
               Haptics.selectionAsync();
               onChangeValue(formatInputWithCommas(String(Math.round(recommended))));
-              onChangeFreq('monthly');
+              onChangeFreq('annual');
             }}
           >
             <Text style={[styles.recApplyText, { color: accentColor }]}>Apply</Text>
@@ -118,13 +118,14 @@ export default function PayoffScreen() {
   const [rate, setRate] = useState('6.75');
   const [origYears, setOrigYears] = useState('30');
   const [yearsLeft, setYearsLeft] = useState('27');
+  const [manualBalance, setManualBalance] = useState(null);
   const [extra, setExtra] = useState('200');
   const [lump, setLump] = useState('0');
   const [homeValue, setHomeValue] = useState(formatInputWithCommas('500000'));
-  const [tax, setTax] = useState(formatInputWithCommas('320'));
-  const [taxFreq, setTaxFreq] = useState('monthly');
-  const [insurance, setInsurance] = useState(formatInputWithCommas('130'));
-  const [insuranceFreq, setInsuranceFreq] = useState('monthly');
+  const [tax, setTax] = useState(formatInputWithCommas('3840'));
+  const [taxFreq, setTaxFreq] = useState('annual');
+  const [insurance, setInsurance] = useState(formatInputWithCommas('1560'));
+  const [insuranceFreq, setInsuranceFreq] = useState('annual');
   const [pmi, setPmi] = useState('0');
   const [pmiFreq, setPmiFreq] = useState('monthly');
   const [hoa, setHoa] = useState('0');
@@ -137,6 +138,7 @@ export default function PayoffScreen() {
   const [zipInfo, setZipInfo] = useState(null);
   const [recTax, setRecTax] = useState(null);
   const [recIns, setRecIns] = useState(null);
+  const [recInsDetails, setRecInsDetails] = useState(null);
   const [name, setName] = useState('');
 
   // Restore a saved mortgage payoff scenario from the Saved tab.
@@ -149,13 +151,19 @@ export default function PayoffScreen() {
     setRate(i.rate ?? '6.75');
     setOrigYears(i.origYears ?? '30');
     setYearsLeft(i.yearsLeft ?? '27');
+    const restoredBalance = parseLoanNumber(i.currentBalance);
+    setManualBalance(
+      i.balanceAdjusted && Number.isFinite(restoredBalance)
+        ? formatInputWithCommas(String(Math.round(restoredBalance)))
+        : null,
+    );
     setExtra(i.extra ?? '200');
     setLump(i.lump ?? '0');
     setHomeValue(i.homeValue ?? formatInputWithCommas('500000'));
-    setTax(i.tax ?? formatInputWithCommas('320'));
-    setTaxFreq(i.taxFreq ?? 'monthly');
-    setInsurance(i.insurance ?? formatInputWithCommas('130'));
-    setInsuranceFreq(i.insuranceFreq ?? 'monthly');
+    setTax(i.tax ?? formatInputWithCommas('3840'));
+    setTaxFreq(i.taxFreq ?? 'annual');
+    setInsurance(i.insurance ?? formatInputWithCommas('1560'));
+    setInsuranceFreq(i.insuranceFreq ?? 'annual');
     setPmi(i.pmi ?? '0');
     setPmiFreq(i.pmiFreq ?? 'monthly');
     setHoa(i.hoa ?? '0');
@@ -178,13 +186,14 @@ export default function PayoffScreen() {
     setRate(i.rate ?? '6.75');
     setOrigYears(i.origYears ?? '30');
     setYearsLeft(i.yearsLeft ?? i.origYears ?? '30');
+    setManualBalance(null);
     setExtra(i.extra ?? '200');
     setLump(i.lump ?? '0');
     setHomeValue(i.homeValue ?? formatInputWithCommas('500000'));
-    setTax(i.tax ?? formatInputWithCommas('320'));
-    setTaxFreq(i.taxFreq ?? 'monthly');
-    setInsurance(i.insurance ?? formatInputWithCommas('130'));
-    setInsuranceFreq(i.insuranceFreq ?? 'monthly');
+    setTax(i.tax ?? formatInputWithCommas('3840'));
+    setTaxFreq(i.taxFreq ?? 'annual');
+    setInsurance(i.insurance ?? formatInputWithCommas('1560'));
+    setInsuranceFreq(i.insuranceFreq ?? 'annual');
     setPmi(i.pmi ?? '0');
     setPmiFreq(i.pmiFreq ?? 'monthly');
     setHoa(i.hoa ?? '0');
@@ -229,12 +238,25 @@ export default function PayoffScreen() {
     maxTerm: 50,
   });
 
-  // Derive the current remaining balance from the original loan trajectory.
-  const balN = !baseValidationError
+  // Derive the current balance as a default, while allowing borrowers who know
+  // the exact figure to replace it (for example, after prior extra principal).
+  const estimatedBalance = !baseValidationError
     ? remainingBalanceFromOriginal(origLoanN, rateN, origYearsN * 12, yearsLeftN * 12)
     : 0;
+  const manualBalanceN = manualBalance == null ? NaN : parseLoanNumber(manualBalance);
+  const balN = manualBalance == null ? estimatedBalance : manualBalanceN;
+  const balanceValidationError =
+    manualBalance != null && (!Number.isFinite(manualBalanceN) || manualBalanceN <= 0)
+      ? 'Estimated remaining balance must be a valid amount greater than 0.'
+      : manualBalance != null && manualBalanceN > origLoanN
+        ? 'Estimated remaining balance cannot exceed the original loan amount.'
+        : null;
+  const displayedBalance =
+    manualBalance ??
+    (estimatedBalance > 0 ? formatInputWithCommas(String(Math.round(estimatedBalance))) : '');
   const loanValidationError =
     baseValidationError ||
+    balanceValidationError ||
     validatePayoffScenario({
       originalLoan: origLoanN,
       rate: rateN,
@@ -268,22 +290,22 @@ export default function PayoffScreen() {
       origYears,
       curYears: yearsLeft,
       currentBalance: formatInputWithCommas(String(Math.round(balN))),
+      balanceAdjusted: manualBalance != null,
       zip,
       name,
     });
-  }, [balN, loanValidationError, name, origLoan, origYears, rate, yearsLeft, zip]);
+  }, [balN, loanValidationError, manualBalance, name, origLoan, origYears, rate, yearsLeft, zip]);
 
-  // The regular scheduled monthly payment for the remaining balance over the
-  // years that are actually left. This is the payment the borrower keeps
-  // paying regardless of any lump sum.
-  const scheduledPayment = balN > 0 ? monthlyPI(balN, rateN, yearsLeftN) : 0;
+  // Keep the payment established by the original loan terms. Entering an exact
+  // lower balance should shorten payoff, not recast the required payment.
+  const scheduledPayment = balN > 0 ? monthlyPI(origLoanN, rateN, origYearsN) : 0;
 
   // Apply the one-time lump sum immediately against the balance for the
   // accelerated scenario. The lump reduces the starting principal.
   const balAfterLump = validationError ? 0 : Math.max(balN - lumpN, 0);
 
-  // Baseline: remaining balance amortized over years left, no extras/lump.
-  const base = balN > 0 ? amortize(balN, rateN, yearsLeftN, 0) : null;
+  // Baseline: exact current balance paid using the established loan payment.
+  const base = balN > 0 ? amortizeWithPayment(balN, rateN, scheduledPayment) : null;
 
   // Accelerated scenario: start from the balance AFTER the lump sum, but keep
   // paying the ORIGINAL scheduled monthly payment (plus any monthly extra).
@@ -308,15 +330,11 @@ export default function PayoffScreen() {
 
   const computeRecommendations = (info, estimatedHomeValue) => {
     const value = estimatedHomeValue > 0 ? estimatedHomeValue : 500000;
-    const effectiveRate = info.effectiveRate != null ? info.effectiveRate : info.stateRate;
-    setRecTax((value * (effectiveRate / 100)) / 12);
-
-    if (info.insBase != null) {
-      const scale = Math.max(0.6, Math.min(2.5, value / 400000));
-      setRecIns((info.insBase * scale) / 12);
-    } else {
-      setRecIns((value * 0.0035) / 12);
-    }
+    const taxEstimate = estimatePropertyTax(info, value);
+    const insuranceEstimate = estimateHomeInsurance(info, value);
+    setRecTax(taxEstimate.annualEstimate);
+    setRecIns(insuranceEstimate.annualEstimate);
+    setRecInsDetails(insuranceEstimate);
   };
 
   useEffect(() => {
@@ -357,11 +375,11 @@ export default function PayoffScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (recTax != null) {
       setTax(formatInputWithCommas(String(Math.round(recTax))));
-      setTaxFreq('monthly');
+      setTaxFreq('annual');
     }
     if (recIns != null) {
       setInsurance(formatInputWithCommas(String(Math.round(recIns))));
-      setInsuranceFreq('monthly');
+      setInsuranceFreq('annual');
     }
   };
 
@@ -392,6 +410,7 @@ export default function PayoffScreen() {
           origYears,
           curYears: yearsLeft,
           currentBalance: formatInputWithCommas(String(Math.round(balN))),
+          balanceAdjusted: manualBalance != null,
           newRate: '6.00',
           newTerm: yearsLeft,
           costs: formatInputWithCommas('10000'),
@@ -444,6 +463,8 @@ export default function PayoffScreen() {
         rate,
         origYears,
         yearsLeft,
+        currentBalance: formatInputWithCommas(String(Math.round(balN))),
+        balanceAdjusted: manualBalance != null,
         extra,
         lump,
         homeValue,
@@ -526,28 +547,32 @@ export default function PayoffScreen() {
               </View>
             </View>
 
-            {balN > 0 ? (
-              <View style={styles.derivedCard}>
-                <View style={[styles.derivedIcon, { backgroundColor: COLORS.accent + '22' }]}>
-                  <Ionicons name="wallet" size={20} color={COLORS.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.derivedLabel}>Estimated Remaining Balance</Text>
-                  <Text style={styles.derivedValue}>{fmtMoney(balN)}</Text>
-                  <Text style={styles.derivedSub}>
-                    After {(origYearsN - yearsLeftN).toFixed(0)} yr of payments
-                  </Text>
-                </View>
-              </View>
-            ) : null}
+            <InputField
+              label="Estimated Remaining Balance"
+              value={displayedBalance}
+              onChangeText={setManualBalance}
+              prefix="$"
+              accentColor={COLORS.accent}
+            />
 
             <View style={styles.hintRow}>
               <Ionicons name="information-circle" size={15} color={COLORS.textMuted} />
               <Text style={styles.hintText}>
-                We estimate the current balance from the loan's amortization schedule using the
-                terms above.
+                We estimate this balance from the amortization schedule. Replace it with your exact
+                remaining principal when available.
               </Text>
             </View>
+            {manualBalance != null ? (
+              <TouchableOpacity
+                style={styles.resetEstimateBtn}
+                onPress={() => setManualBalance(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Use calculated remaining balance"
+              >
+                <Ionicons name="refresh" size={15} color={COLORS.accent} />
+                <Text style={styles.resetEstimateText}>Use calculated estimate</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <TouchableOpacity
@@ -675,18 +700,25 @@ export default function PayoffScreen() {
                       <View style={styles.zipRecCol}>
                         <Text style={styles.zipRecLabel}>Est. Property Tax</Text>
                         <Text style={[styles.zipRecValue, { color: COLORS.amber }]}>
-                          {recTax != null ? `${fmtMoney(recTax)}/mo` : '—'}
+                          {recTax != null ? `${fmtMoney(recTax)}/yr` : '—'}
                         </Text>
                         <Text style={styles.zipRecNote}>
-                          {zipInfo.effectiveRate.toFixed(2)}% of home value
+                          {zipInfo.effectiveRate.toFixed(2)}% ·{' '}
+                          {zipInfo.hasCountyData ? 'county estimate' : 'state fallback'}
                         </Text>
                       </View>
                       <View style={styles.zipRecCol}>
                         <Text style={styles.zipRecLabel}>Est. Home Insurance</Text>
                         <Text style={[styles.zipRecValue, { color: COLORS.teal }]}>
-                          {recIns != null ? `${fmtMoney(recIns)}/mo` : '—'}
+                          {recIns != null ? `${fmtMoney(recIns)}/yr` : '—'}
                         </Text>
-                        <Text style={styles.zipRecNote}>{zipInfo.state} average</Text>
+                        <Text style={styles.zipRecNote}>
+                          {recInsDetails?.isCountyEstimate
+                            ? `${fmtMoney(recInsDetails.annualLow)}–${fmtMoney(
+                                recInsDetails.annualHigh,
+                              )} county range`
+                            : `${zipInfo.stateCode} state fallback`}
+                        </Text>
                       </View>
                     </View>
                     <TouchableOpacity
@@ -698,7 +730,9 @@ export default function PayoffScreen() {
                       <Text style={styles.applyAllText}>Apply tax & insurance estimates</Text>
                     </TouchableOpacity>
                     <Text style={styles.zipDisclaimer}>
-                      Location estimates are planning figures. Apply your current tax bill,
+                      Estimates use {zipInfo.source}
+                      {zipInfo.sourceYear ? ` ${zipInfo.sourceYear}` : ''}. Insurance reflects
+                      county costs for mortgaged homes when available. Apply your current tax bill,
                       insurance premium, and HOA statement below when available.
                     </Text>
                   </View>
@@ -917,33 +951,18 @@ const styles = StyleSheet.create({
   rowInputs: { flexDirection: 'row' },
   loanAmountInput: { flex: 1.7 },
   interestRateInput: { flex: 0.8 },
-  derivedCard: {
+  resetEstimateBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    marginTop: 8,
+    borderRadius: 9,
+    backgroundColor: COLORS.accent + '12',
   },
-  derivedIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  derivedLabel: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600' },
-  derivedValue: {
-    color: COLORS.textPrimary,
-    fontSize: 24,
-    fontWeight: '900',
-    marginVertical: 2,
-    letterSpacing: -0.5,
-  },
-  derivedSub: { color: COLORS.textMuted, fontSize: 12, fontWeight: '500' },
+  resetEstimateText: { color: COLORS.accent, fontSize: 12, fontWeight: '700' },
   refinanceHandoff: {
     flexDirection: 'row',
     alignItems: 'center',

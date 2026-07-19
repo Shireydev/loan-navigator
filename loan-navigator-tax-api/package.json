@@ -3,6 +3,8 @@
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
+		"data:costs": "node scripts/importCountyCostData.js",
+		"data:closing": "node scripts/importHmdaClosingData.js",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev"
