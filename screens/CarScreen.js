@@ -26,6 +26,8 @@ import {
   amortizeWithPayment,
   fmtMoney,
   formatInputWithCommas,
+  getLoanTimeline,
+  loanStartFromRemainingMonths,
   parseLoanNumber,
   remainingBalanceFromOriginal,
   validateAutoPurchase,
@@ -47,6 +49,9 @@ const LUMP_PRESETS = [1000, 2500, 5000, 10000];
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 const AUTO_HEADER_COLLAPSE_DISTANCE = 96;
 const AUTO_HEADER_DETAILS_HEIGHT = 112;
+const AUTO_HEADER_COLLAPSES = Platform.OS === 'ios';
+const DEFAULT_AUTO_PAYOFF_START = loanStartFromRemainingMonths(60, 42);
+const DEFAULT_AUTO_REFINANCE_START = loanStartFromRemainingMonths(84, 42);
 
 export default function CarScreen() {
   const route = useRoute();
@@ -74,7 +79,8 @@ export default function CarScreen() {
   const [pBalance, setPBalance] = useState('25,000');
   const [pRate, setPRate] = useState('6.90');
   const [pOriginalTerm, setPOriginalTerm] = useState('60');
-  const [pMonths, setPMonths] = useState('42');
+  const [pStartMonth, setPStartMonth] = useState(String(DEFAULT_AUTO_PAYOFF_START.startMonth));
+  const [pStartYear, setPStartYear] = useState(String(DEFAULT_AUTO_PAYOFF_START.startYear));
   const [pExtra, setPExtra] = useState('100');
   const [pLump, setPLump] = useState('0');
   const [payoffFromPurchase, setPayoffFromPurchase] = useState(false);
@@ -83,7 +89,8 @@ export default function CarScreen() {
   const [rBalance, setRBalance] = useState('22,000');
   const [rCurRate, setRCurRate] = useState('9.50');
   const [rOriginalTerm, setROriginalTerm] = useState('84');
-  const [rMonths, setRMonths] = useState('42');
+  const [rStartMonth, setRStartMonth] = useState(String(DEFAULT_AUTO_REFINANCE_START.startMonth));
+  const [rStartYear, setRStartYear] = useState(String(DEFAULT_AUTO_REFINANCE_START.startYear));
   const [rManualBalance, setRManualBalance] = useState(null);
   const [rNewRate, setRNewRate] = useState('6.00');
   const [rNewTerm, setRNewTerm] = useState('48');
@@ -124,8 +131,12 @@ export default function CarScreen() {
       setMode('payoff');
       setPBalance(i.pBalance ?? '25,000');
       setPRate(i.pRate ?? '6.90');
+      const restoredTerm = parseLoanNumber(i.pOriginalTerm ?? '60');
+      const restoredRemaining = parseLoanNumber(i.pMonths ?? '42');
+      const restoredStart = loanStartFromRemainingMonths(restoredTerm, restoredRemaining);
       setPOriginalTerm(i.pOriginalTerm ?? '60');
-      setPMonths(i.pMonths ?? '42');
+      setPStartMonth(String(i.pStartMonth ?? restoredStart.startMonth));
+      setPStartYear(String(i.pStartYear ?? restoredStart.startYear));
       setPExtra(i.pExtra ?? '100');
       setPLump(i.pLump ?? '0');
       setPayoffFromPurchase(false);
@@ -135,8 +146,12 @@ export default function CarScreen() {
       setMode('refinance');
       setRBalance(i.rBalance ?? '22,000');
       setRCurRate(i.rCurRate ?? '9.50');
+      const restoredTerm = parseLoanNumber(i.rOriginalTerm ?? '84');
+      const restoredRemaining = parseLoanNumber(i.rMonths ?? '42');
+      const restoredStart = loanStartFromRemainingMonths(restoredTerm, restoredRemaining);
       setROriginalTerm(i.rOriginalTerm ?? '84');
-      setRMonths(i.rMonths ?? '42');
+      setRStartMonth(String(i.rStartMonth ?? restoredStart.startMonth));
+      setRStartYear(String(i.rStartYear ?? restoredStart.startYear));
       const restoredCurrentBalance = parseLoanNumber(i.rCurrentBalance);
       setRManualBalance(
         i.rBalanceAdjusted && Number.isFinite(restoredCurrentBalance)
@@ -160,7 +175,9 @@ export default function CarScreen() {
       setPBalance(purchaseLoan);
       setPRate(rate);
       setPOriginalTerm(String(termN));
-      setPMonths(String(termN));
+      const purchaseStart = loanStartFromRemainingMonths(termN, termN);
+      setPStartMonth(String(purchaseStart.startMonth));
+      setPStartYear(String(purchaseStart.startYear));
       setPExtra('100');
       setPLump('0');
       setPayoffFromPurchase(true);
@@ -171,7 +188,9 @@ export default function CarScreen() {
       setRBalance(purchaseLoan);
       setRCurRate(rate);
       setROriginalTerm(String(termN));
-      setRMonths(String(termN));
+      const purchaseStart = loanStartFromRemainingMonths(termN, termN);
+      setRStartMonth(String(purchaseStart.startMonth));
+      setRStartYear(String(purchaseStart.startYear));
       setRManualBalance(null);
       setRNewTerm(String(termN));
       setRefinanceFromPurchase(true);
@@ -184,9 +203,10 @@ export default function CarScreen() {
   // ---- Purchase calcs ----
   // Trade-in value is subtracted from the vehicle price BEFORE sales tax is
   // applied (most states tax the net price after trade-in credit).
+  const optionalAmount = (value) => (String(value ?? '').trim() === '' ? 0 : num(value));
   const priceN = num(price);
-  const downN = num(down);
-  const tradeN = num(trade);
+  const downN = optionalAmount(down);
+  const tradeN = optionalAmount(trade);
   const salesTaxN = num(salesTax);
   const rateN = num(rate);
   const termN = num(term);
@@ -244,22 +264,25 @@ export default function CarScreen() {
   // ---- Payoff calcs ----
   const pOriginalLoanN = num(pBalance);
   const pOriginalTermN = num(pOriginalTerm);
-  const pMonthsN = num(pMonths);
+  const pTimeline = getLoanTimeline(num(pStartMonth), num(pStartYear), pOriginalTermN);
+  const pMonthsN = pTimeline.remainingMonths;
   const pRateN = num(pRate);
   const pExtraN = num(pExtra);
   const pLumpN = num(pLump);
 
-  const pBaseValidationError = validatePayoffScenario({
-    originalLoan: pOriginalLoanN,
-    rate: pRateN,
-    originalTerm: pOriginalTermN,
-    remainingTerm: pMonthsN,
-    extra: pExtraN,
-    lump: pLumpN,
-    termLabel: 'months',
-    maxTerm: 120,
-    wholeTerms: true,
-  });
+  const pBaseValidationError =
+    pTimeline.error ||
+    validatePayoffScenario({
+      originalLoan: pOriginalLoanN,
+      rate: pRateN,
+      originalTerm: pOriginalTermN,
+      remainingTerm: pMonthsN,
+      extra: pExtraN,
+      lump: pLumpN,
+      termLabel: 'months',
+      maxTerm: 120,
+      wholeTerms: true,
+    });
   const pScheduledPay = pBaseValidationError
     ? 0
     : monthlyPI(pOriginalLoanN, pRateN, pOriginalTermN / 12);
@@ -313,24 +336,27 @@ export default function CarScreen() {
   // ---- Refinance calcs ----
   const rOriginalLoanN = num(rBalance);
   const rOriginalTermN = num(rOriginalTerm);
-  const rMonthsN = num(rMonths);
+  const rTimeline = getLoanTimeline(num(rStartMonth), num(rStartYear), rOriginalTermN);
+  const rMonthsN = rTimeline.remainingMonths;
   const rCurRateN = num(rCurRate);
   const rNewRateN = num(rNewRate);
   const rNewTermN = num(rNewTerm);
   const rFeesN = num(rFees);
-  const rBaseValidationError = validateRefinanceScenario({
-    balance: rOriginalLoanN,
-    balanceLabel: 'Original loan amount',
-    currentRate: rCurRateN,
-    originalTerm: rOriginalTermN,
-    remainingTerm: rMonthsN,
-    newRate: rNewRateN,
-    newTerm: rNewTermN,
-    costs: rFeesN,
-    termLabel: 'months',
-    maxTerm: 120,
-    wholeTerms: true,
-  });
+  const rBaseValidationError =
+    rTimeline.error ||
+    validateRefinanceScenario({
+      balance: rOriginalLoanN,
+      balanceLabel: 'Original loan amount',
+      currentRate: rCurRateN,
+      originalTerm: rOriginalTermN,
+      remainingTerm: rMonthsN,
+      newRate: rNewRateN,
+      newTerm: rNewTermN,
+      costs: rFeesN,
+      termLabel: 'months',
+      maxTerm: 120,
+      wholeTerms: true,
+    });
   const rEstimatedBalance = rBaseValidationError
     ? 0
     : remainingBalanceFromOriginal(rOriginalLoanN, rCurRateN, rOriginalTermN, rMonthsN);
@@ -437,7 +463,7 @@ export default function CarScreen() {
       interestSaved: pInterestSaved,
       currentSchedule: pBase.schedule,
       newSchedule: pWith.schedule,
-      inputs: { pBalance, pRate, pOriginalTerm, pMonths, pExtra, pLump },
+      inputs: { pBalance, pRate, pOriginalTerm, pStartMonth, pStartYear, pExtra, pLump },
       presetName: name,
     });
   };
@@ -473,7 +499,8 @@ export default function CarScreen() {
         rBalance,
         rCurRate,
         rOriginalTerm,
-        rMonths,
+        rStartMonth,
+        rStartYear,
         rCurrentBalance: formatInputWithCommas(String(Math.round(rBalN))),
         rBalanceAdjusted: rManualBalance != null,
         rNewRate,
@@ -489,28 +516,33 @@ export default function CarScreen() {
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
-  const headerDetailsHeight = scrollY.interpolate({
-    inputRange: [0, AUTO_HEADER_COLLAPSE_DISTANCE],
-    outputRange: [AUTO_HEADER_DETAILS_HEIGHT, 0],
-    extrapolate: 'clamp',
-  });
-  const headerDetailsOpacity = scrollY.interpolate({
-    inputRange: [0, AUTO_HEADER_COLLAPSE_DISTANCE * 0.7],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-  const paymentFontSize = collapseProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [44, 30],
-  });
-  const headerBottomPadding = collapseProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [20, 10],
-  });
-  const headerBarMargin = collapseProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [14, 5],
-  });
+  // Animating the height of a header outside the ScrollView changes the
+  // Android viewport, which changes the scroll offset again and creates a
+  // feedback-loop jitter near the top. Keep its layout stable on Android;
+  // iOS retains the existing collapsing treatment.
+  const headerDetailsHeight = AUTO_HEADER_COLLAPSES
+    ? scrollY.interpolate({
+        inputRange: [0, AUTO_HEADER_COLLAPSE_DISTANCE],
+        outputRange: [AUTO_HEADER_DETAILS_HEIGHT, 0],
+        extrapolate: 'clamp',
+      })
+    : undefined;
+  const headerDetailsOpacity = AUTO_HEADER_COLLAPSES
+    ? scrollY.interpolate({
+        inputRange: [0, AUTO_HEADER_COLLAPSE_DISTANCE * 0.7],
+        outputRange: [1, 0],
+        extrapolate: 'clamp',
+      })
+    : 1;
+  const paymentFontSize = AUTO_HEADER_COLLAPSES
+    ? collapseProgress.interpolate({ inputRange: [0, 1], outputRange: [44, 30] })
+    : 44;
+  const headerBottomPadding = AUTO_HEADER_COLLAPSES
+    ? collapseProgress.interpolate({ inputRange: [0, 1], outputRange: [20, 10] })
+    : 20;
+  const headerBarMargin = AUTO_HEADER_COLLAPSES
+    ? collapseProgress.interpolate({ inputRange: [0, 1], outputRange: [14, 5] })
+    : 14;
 
   return (
     <View style={styles.container}>
@@ -545,7 +577,11 @@ export default function CarScreen() {
           <Animated.View
             style={[
               styles.purchaseHeaderDetails,
-              { height: headerDetailsHeight, opacity: headerDetailsOpacity },
+              {
+                height: headerDetailsHeight,
+                opacity: headerDetailsOpacity,
+                overflow: AUTO_HEADER_COLLAPSES ? 'hidden' : 'visible',
+              },
             ]}
           >
             <Text style={styles.purchaseBigLabel}>per month · based on your inputs</Text>
@@ -589,9 +625,13 @@ export default function CarScreen() {
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
-          onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
-            useNativeDriver: false,
-          })}
+          onScroll={
+            AUTO_HEADER_COLLAPSES
+              ? Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+                  useNativeDriver: false,
+                })
+              : undefined
+          }
         >
           <View style={styles.modeRow}>
             {MODES.map((m) => {
@@ -785,8 +825,8 @@ export default function CarScreen() {
                     <Ionicons name="car-sport" size={18} color={COLORS.teal} />
                   </View>
                   <Text style={styles.handoffBannerText}>
-                    Started from your purchase estimate. Months remaining begins at the full loan
-                    term; adjust it if payments have already been made.
+                    Started from your purchase estimate. The start date defaults to this month;
+                    adjust it if payments have already been made.
                   </Text>
                 </View>
               ) : null}
@@ -815,25 +855,30 @@ export default function CarScreen() {
                   </View>
                 </View>
 
+                <InputField
+                  label="Loan Term"
+                  value={pOriginalTerm}
+                  onChangeText={setPOriginalTerm}
+                  suffix="mo"
+                  accentColor={COLORS.purple}
+                />
                 <View style={styles.rowInputs}>
                   <View style={{ flex: 1 }}>
                     <InputField
-                      label="Original Term"
-                      value={pOriginalTerm}
-                      onChangeText={setPOriginalTerm}
-                      suffix="mo"
-                      accentColor={COLORS.purple}
+                      label="Start Month"
+                      value={pStartMonth}
+                      onChangeText={setPStartMonth}
+                      placeholder="1–12"
+                      accentColor={COLORS.teal}
                     />
                   </View>
-
                   <View style={{ width: 12 }} />
-
                   <View style={{ flex: 1 }}>
                     <InputField
-                      label="Months Remaining"
-                      value={pMonths}
-                      onChangeText={setPMonths}
-                      suffix="mo"
+                      label="Start Year"
+                      value={pStartYear}
+                      onChangeText={setPStartYear}
+                      placeholder="YYYY"
                       accentColor={COLORS.teal}
                     />
                   </View>
@@ -933,8 +978,8 @@ export default function CarScreen() {
                     <Ionicons name="car-sport" size={18} color={COLORS.teal} />
                   </View>
                   <Text style={styles.handoffBannerText}>
-                    Started from your purchase estimate. Review months remaining, then enter the
-                    rate and fees from the refinance offer you want to compare.
+                    Started from your purchase estimate. Review the start date, then enter the rate
+                    and fees from the refinance offer you want to compare.
                   </Text>
                 </View>
               ) : null}
@@ -969,31 +1014,39 @@ export default function CarScreen() {
                   </View>
                 </View>
 
+                <InputField
+                  label="Loan Term"
+                  value={rOriginalTerm}
+                  onChangeText={(value) => {
+                    setROriginalTerm(value);
+                    setRManualBalance(null);
+                  }}
+                  suffix="mo"
+                  accentColor={COLORS.purple}
+                />
                 <View style={styles.rowInputs}>
                   <View style={{ flex: 1 }}>
                     <InputField
-                      label="Original Term"
-                      value={rOriginalTerm}
+                      label="Start Month"
+                      value={rStartMonth}
                       onChangeText={(value) => {
-                        setROriginalTerm(value);
+                        setRStartMonth(value);
                         setRManualBalance(null);
                       }}
-                      suffix="mo"
-                      accentColor={COLORS.purple}
+                      placeholder="1–12"
+                      accentColor={COLORS.teal}
                     />
                   </View>
-
                   <View style={{ width: 12 }} />
-
                   <View style={{ flex: 1 }}>
                     <InputField
-                      label="Months Remaining"
-                      value={rMonths}
+                      label="Start Year"
+                      value={rStartYear}
                       onChangeText={(value) => {
-                        setRMonths(value);
+                        setRStartYear(value);
                         setRManualBalance(null);
                       }}
-                      suffix="mo"
+                      placeholder="YYYY"
                       accentColor={COLORS.teal}
                     />
                   </View>

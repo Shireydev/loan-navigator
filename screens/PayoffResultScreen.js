@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -18,7 +18,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import BalanceLineChart from '../components/BalanceLineChart';
 import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
-import { COLORS, fmtMoney } from '../theme';
+import {
+  COLORS,
+  amortizeWithPayment,
+  fmtMoney,
+  formatInputWithCommas,
+  formatProjectedPayoffMonth,
+  parseLoanNumber,
+} from '../theme';
 import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 
 function formatDuration(months) {
@@ -48,40 +55,118 @@ export default function PayoffResultScreen() {
   const p = route.params;
   const [name, setName] = useState(p.presetName || '');
   const [saved, setSaved] = useState(false);
+  const [paymentType, setPaymentType] = useState(p.extra > 0 ? 'monthly' : 'lump');
+  const [monthlyExtra, setMonthlyExtra] = useState(
+    p.extra > 0 ? formatInputWithCommas(String(p.extra)) : '',
+  );
+  const [lumpSum, setLumpSum] = useState(p.lump > 0 ? formatInputWithCommas(String(p.lump)) : '');
 
-  const monthlyDifference = p.newMonthlyHousingCost - p.currentMonthlyHousingCost;
-  const usesMonthlyExtra = p.extra > 0;
-  const usesLumpSum = p.lump > 0;
+  const projection = useMemo(() => {
+    const parseOptionalAmount = (value) =>
+      String(value ?? '').trim() === '' ? 0 : parseLoanNumber(value);
+    const parsedExtra = parseOptionalAmount(monthlyExtra);
+    const parsedLump = parseOptionalAmount(lumpSum);
+    const error =
+      !Number.isFinite(parsedExtra) || parsedExtra < 0
+        ? 'Monthly extra payment must be a valid amount of 0 or more.'
+        : !Number.isFinite(parsedLump) || parsedLump < 0
+          ? 'Lump-sum payment must be a valid amount of 0 or more.'
+          : parsedLump > p.currentBalance
+            ? 'Lump-sum payment cannot exceed the current balance.'
+            : null;
+    const extra = error ? 0 : parsedExtra;
+    const lump = error ? 0 : parsedLump;
+    const balanceAfterLump = Math.max(p.currentBalance - lump, 0);
+    const nonLoanHousingCost = Math.max(p.currentMonthlyHousingCost - p.currentPayment, 0);
+    const accelerated =
+      balanceAfterLump <= 0
+        ? {
+            months: 0,
+            totalInterest: 0,
+            monthlyPayment: 0,
+            schedule: [{ year: 0, balance: 0 }],
+          }
+        : amortizeWithPayment(balanceAfterLump, p.rate, p.currentPayment + extra);
+    const monthsSaved = Math.max(0, p.currentPayoffMonths - accelerated.months);
+
+    return {
+      error,
+      extra,
+      lump,
+      balanceAfterLump,
+      newPayment: accelerated.monthlyPayment,
+      newMonthlyHousingCost: nonLoanHousingCost + accelerated.monthlyPayment,
+      newPayoffMonths: accelerated.months,
+      newInterest: accelerated.totalInterest,
+      monthsSaved,
+      interestSaved: Math.max(0, p.currentInterest - accelerated.totalInterest),
+      newSchedule: accelerated.schedule,
+    };
+  }, [
+    lumpSum,
+    monthlyExtra,
+    p.currentBalance,
+    p.currentInterest,
+    p.currentMonthlyHousingCost,
+    p.currentPayment,
+    p.currentPayoffMonths,
+    p.rate,
+  ]);
+
+  const currentPayoffDate = formatProjectedPayoffMonth(p.currentPayoffMonths);
+  const acceleratedPayoffDate = formatProjectedPayoffMonth(projection.newPayoffMonths);
+
+  const monthlyDifference = projection.newMonthlyHousingCost - p.currentMonthlyHousingCost;
+  const usesMonthlyExtra = projection.extra > 0;
+  const usesLumpSum = projection.lump > 0;
   const planSummary =
     usesMonthlyExtra && usesLumpSum
-      ? `Adding ${fmtMoney(p.extra)} each month and applying a ${fmtMoney(p.lump)} lump sum`
+      ? `Adding ${fmtMoney(projection.extra)} each month and applying a ${fmtMoney(projection.lump)} lump sum`
       : usesMonthlyExtra
-        ? `Adding ${fmtMoney(p.extra)} each month`
-        : `Applying a ${fmtMoney(p.lump)} lump sum`;
+        ? `Adding ${fmtMoney(projection.extra)} each month`
+        : usesLumpSum
+          ? `Applying a ${fmtMoney(projection.lump)} lump sum`
+          : 'Making no additional principal payments';
+  const payoffChangeText =
+    projection.monthsSaved > 0
+      ? `${formatDuration(projection.monthsSaved)} sooner`
+      : 'no payoff-time change';
 
   const saveScenario = async () => {
+    if (projection.error) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Check Your Payment', projection.error);
+      return;
+    }
+
     try {
       await addSavedScenario({
         type: SCENARIO_TYPES.MORTGAGE_PAYOFF,
         name: name.trim() || 'Mortgage Payoff',
-        inputs: p.inputs,
+        inputs: {
+          ...p.inputs,
+          extra: formatInputWithCommas(String(projection.extra)),
+          lump: formatInputWithCommas(String(projection.lump)),
+        },
         results: {
           balance: p.currentBalance,
           originalLoan: p.originalLoan,
           rate: p.rate,
           originalTerm: p.originalTerm,
           yearsRemaining: p.yearsRemaining,
-          extra: p.extra,
-          lump: p.lump,
-          monthlyPayment: p.newPayment,
-          totalMonthlyHousingCost: p.newMonthlyHousingCost,
+          extra: projection.extra,
+          lump: projection.lump,
+          monthlyPayment: projection.newPayment,
+          totalMonthlyHousingCost: projection.newMonthlyHousingCost,
           propertyTax: p.propertyTax,
           insurance: p.insurance,
           mortgageInsurance: p.mortgageInsurance,
           hoa: p.hoa,
-          payoffMonths: p.newPayoffMonths,
-          monthsSaved: p.monthsSaved,
-          interestSaved: p.interestSaved,
+          payoffMonths: projection.newPayoffMonths,
+          currentPayoffDate,
+          projectedPayoffDate: acceleratedPayoffDate,
+          monthsSaved: projection.monthsSaved,
+          interestSaved: projection.interestSaved,
         },
       });
       setSaved(true);
@@ -130,8 +215,10 @@ export default function PayoffResultScreen() {
           </TouchableOpacity>
         </View>
         <Text style={styles.headerLabel}>PROJECTED INTEREST SAVINGS</Text>
-        <Text style={styles.headerValue}>{fmtMoney(p.interestSaved)}</Text>
-        <Text style={styles.headerSub}>Mortgage-free {formatDuration(p.monthsSaved)} sooner</Text>
+        <Text style={styles.headerValue}>{fmtMoney(projection.interestSaved)}</Text>
+        <Text style={styles.headerSub}>
+          Mortgage-free {acceleratedPayoffDate} · {payoffChangeText}
+        </Text>
       </LinearGradient>
 
       <KeyboardAvoidingView
@@ -170,8 +257,12 @@ export default function PayoffResultScreen() {
                 <Ionicons name="arrow-forward" size={21} color={COLORS.textMuted} />
                 <View style={styles.compareCol}>
                   <Text style={styles.compareLabel}>ACCELERATED</Text>
-                  <Text style={styles.compareValue}>{fmtMoney(p.newMonthlyHousingCost)}</Text>
-                  <Text style={styles.compareSub}>{fmtMoney(p.newPayment)} loan payment</Text>
+                  <Text style={styles.compareValue}>
+                    {fmtMoney(projection.newMonthlyHousingCost)}
+                  </Text>
+                  <Text style={styles.compareSub}>
+                    {fmtMoney(projection.newPayment)} loan payment
+                  </Text>
                 </View>
               </View>
               <View style={styles.monthlyChange}>
@@ -200,19 +291,23 @@ export default function PayoffResultScreen() {
                 <View style={styles.compareCol}>
                   <Text style={styles.compareLabel}>CURRENT</Text>
                   <Text style={styles.compareValue}>{formatDuration(p.currentPayoffMonths)}</Text>
-                  <Text style={styles.compareSub}>scheduled payoff</Text>
+                  <Text style={styles.compareSub}>Est. {currentPayoffDate}</Text>
                 </View>
                 <Ionicons name="arrow-forward" size={21} color={COLORS.textMuted} />
                 <View style={styles.compareCol}>
                   <Text style={styles.compareLabel}>ACCELERATED</Text>
-                  <Text style={styles.compareValue}>{formatDuration(p.newPayoffMonths)}</Text>
-                  <Text style={styles.compareSub}>projected payoff</Text>
+                  <Text style={styles.compareValue}>
+                    {formatDuration(projection.newPayoffMonths)}
+                  </Text>
+                  <Text style={styles.compareSub}>Est. {acceleratedPayoffDate}</Text>
                 </View>
               </View>
               <View style={styles.timeSaved}>
                 <Ionicons name="time" size={18} color={COLORS.green} />
                 <Text style={styles.timeSavedText}>
-                  Paid off {formatDuration(p.monthsSaved)} sooner
+                  {projection.monthsSaved > 0
+                    ? `Paid off ${formatDuration(projection.monthsSaved)} sooner`
+                    : 'No payoff-time change'}
                 </Text>
               </View>
             </View>
@@ -228,7 +323,7 @@ export default function PayoffResultScreen() {
               />
               <MetricRow
                 label="Accelerated Schedule"
-                value={fmtMoney(p.newInterest)}
+                value={fmtMoney(projection.newInterest)}
                 color={COLORS.teal}
                 last
               />
@@ -237,7 +332,9 @@ export default function PayoffResultScreen() {
                   <Text style={styles.interestOutcomeLabel}>PROJECTED INTEREST SAVINGS</Text>
                   <Text style={styles.interestOutcomeSub}>Interest avoided by paying sooner</Text>
                 </View>
-                <Text style={styles.interestOutcomeValue}>{fmtMoney(p.interestSaved)}</Text>
+                <Text style={styles.interestOutcomeValue}>
+                  {fmtMoney(projection.interestSaved)}
+                </Text>
               </View>
             </View>
 
@@ -245,10 +342,105 @@ export default function PayoffResultScreen() {
               <View style={styles.lumpBanner}>
                 <Ionicons name="flash" size={18} color={COLORS.amber} />
                 <Text style={styles.lumpBannerText}>
-                  The {fmtMoney(p.lump)} one-time payment lowers the balance from{' '}
-                  {fmtMoney(p.currentBalance)} to {fmtMoney(p.balanceAfterLump)} immediately.
+                  The {fmtMoney(projection.lump)} one-time payment lowers the balance from{' '}
+                  {fmtMoney(p.currentBalance)} to {fmtMoney(projection.balanceAfterLump)}
+                  immediately.
                 </Text>
               </View>
+            ) : null}
+          </View>
+
+          <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>Adjust Your Plan</Text>
+          <View style={styles.planEditorCard}>
+            <Text style={styles.planEditorTitle}>Try another extra payment</Text>
+            <Text style={styles.planEditorSub}>
+              Edit either strategy and the projection will update immediately.
+            </Text>
+            <View style={styles.paymentTypeRow}>
+              <TouchableOpacity
+                style={[
+                  styles.paymentTypeBtn,
+                  paymentType === 'monthly' && styles.paymentTypeBtnActive,
+                ]}
+                onPress={() => setPaymentType('monthly')}
+                accessibilityRole="button"
+                accessibilityState={{ selected: paymentType === 'monthly' }}
+              >
+                <Ionicons
+                  name="repeat"
+                  size={17}
+                  color={paymentType === 'monthly' ? '#fff' : COLORS.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.paymentTypeText,
+                    paymentType === 'monthly' && styles.paymentTypeTextActive,
+                  ]}
+                >
+                  Monthly Extra
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.paymentTypeBtn,
+                  paymentType === 'lump' && styles.paymentTypeBtnActive,
+                ]}
+                onPress={() => setPaymentType('lump')}
+                accessibilityRole="button"
+                accessibilityState={{ selected: paymentType === 'lump' }}
+              >
+                <Ionicons
+                  name="flash"
+                  size={17}
+                  color={paymentType === 'lump' ? '#fff' : COLORS.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.paymentTypeText,
+                    paymentType === 'lump' && styles.paymentTypeTextActive,
+                  ]}
+                >
+                  Lump Sum
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.editorInputLabel}>
+              {paymentType === 'monthly' ? 'Additional principal each month' : 'One-time payment'}
+            </Text>
+            <View style={styles.editorInputRow}>
+              <Text style={styles.editorPrefix}>$</Text>
+              <TextInput
+                style={styles.editorInput}
+                value={paymentType === 'monthly' ? monthlyExtra : lumpSum}
+                onChangeText={(value) => {
+                  const formatted = formatInputWithCommas(value);
+                  if (paymentType === 'monthly') setMonthlyExtra(formatted);
+                  else setLumpSum(formatted);
+                  setSaved(false);
+                }}
+                keyboardType="numeric"
+                maxLength={18}
+                placeholder="0"
+                placeholderTextColor={COLORS.textMuted}
+                accessibilityLabel={
+                  paymentType === 'monthly'
+                    ? 'Additional monthly principal'
+                    : 'One-time lump-sum payment'
+                }
+              />
+              <Text style={styles.editorSuffix}>{paymentType === 'monthly' ? '/mo' : 'once'}</Text>
+            </View>
+            {projection.error ? (
+              <View style={styles.editorError} accessibilityRole="alert">
+                <Ionicons name="alert-circle" size={16} color={COLORS.red} />
+                <Text style={styles.editorErrorText}>{projection.error}</Text>
+              </View>
+            ) : null}
+            {usesMonthlyExtra && usesLumpSum ? (
+              <Text style={styles.combinedPlanText}>
+                Combined plan: {fmtMoney(projection.extra)}/mo plus a {fmtMoney(projection.lump)}{' '}
+                one-time payment.
+              </Text>
             ) : null}
           </View>
 
@@ -260,8 +452,10 @@ export default function PayoffResultScreen() {
               <Text style={styles.narrativeTitle}>What this means for you</Text>
               <Text style={styles.narrativeText}>
                 {planSummary} shortens the estimated payoff from{' '}
-                {formatDuration(p.currentPayoffMonths)} to {formatDuration(p.newPayoffMonths)} and
-                saves {fmtMoney(p.interestSaved)} in interest. The projected monthly housing cost
+                {formatDuration(p.currentPayoffMonths)} to{' '}
+                {formatDuration(projection.newPayoffMonths)} and moves the projected mortgage-free
+                date from {currentPayoffDate} to {acceleratedPayoffDate}, saving{' '}
+                {fmtMoney(projection.interestSaved)} in interest. The projected monthly housing cost
                 includes principal and interest, property tax, home insurance, PMI, and HOA. Only
                 the loan payment reduces the mortgage balance. Tax, insurance, and HOA generally
                 continue after payoff, while PMI may end earlier when equity requirements are met.
@@ -269,7 +463,7 @@ export default function PayoffResultScreen() {
             </View>
           </View>
 
-          {p.currentSchedule?.length && p.newSchedule?.length ? (
+          {p.currentSchedule?.length && projection.newSchedule?.length ? (
             <>
               <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>
                 Balance Projection
@@ -283,15 +477,18 @@ export default function PayoffResultScreen() {
                 </View>
                 <BalanceLineChart
                   schedule={p.currentSchedule}
-                  compareSchedule={p.newSchedule}
+                  compareSchedule={projection.newSchedule}
                   color={COLORS.accent}
                   compareColor={COLORS.green}
                 />
                 <View style={styles.savingsBanner}>
                   <Ionicons name="checkmark-circle" size={18} color={COLORS.green} />
                   <Text style={styles.savingsBannerText}>
-                    Paid off {formatDuration(p.monthsSaved)} sooner · save{' '}
-                    {fmtMoney(p.interestSaved)} in interest
+                    {projection.monthsSaved > 0
+                      ? `Paid off ${formatDuration(projection.monthsSaved)} sooner · save ${fmtMoney(
+                          projection.interestSaved,
+                        )} in interest`
+                      : 'No payoff-time change with the current extra-payment plan'}
                   </Text>
                 </View>
               </View>
@@ -381,6 +578,77 @@ const styles = StyleSheet.create({
   },
   laterSectionTitle: { marginTop: 24 },
   saveTitle: { marginTop: 24 },
+  planEditorCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '55',
+    padding: 18,
+    marginBottom: 18,
+  },
+  planEditorTitle: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '800' },
+  planEditorSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  paymentTypeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 13,
+    padding: 4,
+    marginTop: 16,
+  },
+  paymentTypeBtn: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: 8,
+  },
+  paymentTypeBtnActive: { backgroundColor: COLORS.accent },
+  paymentTypeText: {
+    color: COLORS.textSecondary,
+    fontSize: 12.5,
+    fontWeight: '700',
+    textAlign: 'center',
+    flexShrink: 1,
+  },
+  paymentTypeTextActive: { color: '#fff' },
+  editorInputLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  editorInputRow: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 14,
+  },
+  editorPrefix: { color: COLORS.accent, fontSize: 19, fontWeight: '800', marginRight: 6 },
+  editorInput: { flex: 1, color: COLORS.textPrimary, fontSize: 19, fontWeight: '800' },
+  editorSuffix: { color: COLORS.textMuted, fontSize: 13, fontWeight: '700', marginLeft: 8 },
+  editorError: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 10 },
+  editorErrorText: { color: COLORS.red, fontSize: 12, fontWeight: '600', flex: 1 },
+  combinedPlanText: {
+    color: COLORS.teal,
+    fontSize: 11.5,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: 10,
+  },
   analysisCard: {
     backgroundColor: COLORS.card,
     borderRadius: 18,

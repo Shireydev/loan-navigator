@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -18,7 +18,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import BalanceLineChart from '../components/BalanceLineChart';
 import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
-import { COLORS, fmtMoney } from '../theme';
+import {
+  COLORS,
+  amortizeWithPayment,
+  fmtMoney,
+  formatInputWithCommas,
+  formatProjectedPayoffMonth,
+  parseLoanNumber,
+} from '../theme';
 import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 
 function MetricRow({ label, value, color = COLORS.textPrimary, last, detail }) {
@@ -70,6 +77,8 @@ function Narrative({ children }) {
 }
 
 function PurchaseResults({ p }) {
+  const formatCredit = (value) => (value > 0 ? `−${fmtMoney(value)}` : fmtMoney(0));
+
   return (
     <>
       <Text style={styles.sectionTitle}>Purchase Breakdown</Text>
@@ -101,11 +110,7 @@ function PurchaseResults({ p }) {
         <View style={styles.analysisSection}>
           <SectionLabel>FROM VEHICLE PRICE TO LOAN</SectionLabel>
           <MetricRow label="Vehicle Price" value={fmtMoney(p.price)} />
-          <MetricRow
-            label="Trade-in Credit"
-            value={`−${fmtMoney(p.tradeIn)}`}
-            color={COLORS.teal}
-          />
+          <MetricRow label="Trade-in Credit" value={formatCredit(p.tradeIn)} color={COLORS.teal} />
           <MetricRow
             label="Taxable Amount"
             value={fmtMoney(p.taxableAmount)}
@@ -118,7 +123,7 @@ function PurchaseResults({ p }) {
           />
           <MetricRow
             label="Down Payment"
-            value={`−${fmtMoney(p.downPayment)}`}
+            value={formatCredit(p.downPayment)}
             color={COLORS.green}
             detail="Paid upfront instead of financed"
             last
@@ -165,14 +170,28 @@ function PurchaseResults({ p }) {
   );
 }
 
-function PayoffResults({ p }) {
-  const monthlyChange = p.newPayment - p.currentPayment;
+function PayoffResults({
+  p,
+  projection,
+  paymentType,
+  setPaymentType,
+  monthlyExtra,
+  setMonthlyExtra,
+  lumpSum,
+  setLumpSum,
+  onEdit,
+}) {
+  const monthlyChange = projection.newPayment - p.currentPayment;
+  const currentPayoffDate = formatProjectedPayoffMonth(p.currentPayoffMonths);
+  const acceleratedPayoffDate = formatProjectedPayoffMonth(projection.newPayoffMonths);
   const planSummary =
-    p.extra > 0 && p.lump > 0
-      ? `Adding ${fmtMoney(p.extra)} each month and applying a ${fmtMoney(p.lump)} lump sum`
-      : p.extra > 0
-        ? `Adding ${fmtMoney(p.extra)} each month`
-        : `Applying a ${fmtMoney(p.lump)} lump sum`;
+    projection.extra > 0 && projection.lump > 0
+      ? `Adding ${fmtMoney(projection.extra)} each month and applying a ${fmtMoney(projection.lump)} lump sum`
+      : projection.extra > 0
+        ? `Adding ${fmtMoney(projection.extra)} each month`
+        : projection.lump > 0
+          ? `Applying a ${fmtMoney(projection.lump)} lump sum`
+          : 'Making no additional principal payments';
 
   return (
     <>
@@ -196,7 +215,7 @@ function PayoffResults({ p }) {
           <SectionLabel>MONTHLY LOAN PAYMENT</SectionLabel>
           <Comparison
             left={fmtMoney(p.currentPayment)}
-            right={fmtMoney(p.newPayment)}
+            right={fmtMoney(projection.newPayment)}
             leftDetail="scheduled payment"
             rightDetail="with extra principal"
           />
@@ -214,13 +233,17 @@ function PayoffResults({ p }) {
           <SectionLabel>PAYOFF TIMELINE</SectionLabel>
           <Comparison
             left={`${p.currentPayoffMonths} mo`}
-            right={`${p.newPayoffMonths} mo`}
-            leftDetail="scheduled payoff"
-            rightDetail="accelerated payoff"
+            right={`${projection.newPayoffMonths} mo`}
+            leftDetail={`Est. ${currentPayoffDate}`}
+            rightDetail={`Est. ${acceleratedPayoffDate}`}
           />
           <View style={styles.timeSavedRow}>
             <Ionicons name="time" size={18} color={COLORS.green} />
-            <Text style={styles.timeSavedText}>{p.monthsSaved} months sooner</Text>
+            <Text style={styles.timeSavedText}>
+              {projection.monthsSaved > 0
+                ? `${projection.monthsSaved} months sooner`
+                : 'No payoff-time change'}
+            </Text>
           </View>
         </View>
 
@@ -235,7 +258,7 @@ function PayoffResults({ p }) {
           />
           <MetricRow
             label="Accelerated Schedule"
-            value={fmtMoney(p.newInterest)}
+            value={fmtMoney(projection.newInterest)}
             color={COLORS.teal}
             last
           />
@@ -245,31 +268,124 @@ function PayoffResults({ p }) {
               <Text style={styles.outcomeSub}>Interest avoided by paying principal sooner</Text>
             </View>
             <Text style={[styles.outcomeValue, { color: COLORS.green }]}>
-              {fmtMoney(p.interestSaved)}
+              {fmtMoney(projection.interestSaved)}
             </Text>
           </View>
         </View>
 
-        {p.lump > 0 ? (
+        {projection.lump > 0 ? (
           <View style={styles.lumpRow}>
             <Ionicons name="flash" size={18} color={COLORS.amber} />
             <Text style={styles.lumpText}>
-              The {fmtMoney(p.lump)} one-time payment lowers the estimated balance from{' '}
-              {fmtMoney(p.currentBalance)} to {fmtMoney(p.balanceAfterLump)} immediately.
+              The {fmtMoney(projection.lump)} one-time payment lowers the estimated balance from{' '}
+              {fmtMoney(p.currentBalance)} to {fmtMoney(projection.balanceAfterLump)} immediately.
             </Text>
           </View>
         ) : null}
       </View>
 
+      <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>Adjust Your Plan</Text>
+      <View style={styles.planEditorCard}>
+        <Text style={styles.planEditorTitle}>Try another extra payment</Text>
+        <Text style={styles.planEditorSub}>
+          Edit either strategy and the projection will update immediately.
+        </Text>
+        <View style={styles.paymentTypeRow}>
+          <TouchableOpacity
+            style={[
+              styles.paymentTypeBtn,
+              paymentType === 'monthly' && styles.paymentTypeBtnActive,
+            ]}
+            onPress={() => setPaymentType('monthly')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: paymentType === 'monthly' }}
+          >
+            <Ionicons
+              name="repeat"
+              size={17}
+              color={paymentType === 'monthly' ? '#fff' : COLORS.textSecondary}
+            />
+            <Text
+              style={[
+                styles.paymentTypeText,
+                paymentType === 'monthly' && styles.paymentTypeTextActive,
+              ]}
+            >
+              Monthly Extra
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.paymentTypeBtn, paymentType === 'lump' && styles.paymentTypeBtnActive]}
+            onPress={() => setPaymentType('lump')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: paymentType === 'lump' }}
+          >
+            <Ionicons
+              name="flash"
+              size={17}
+              color={paymentType === 'lump' ? '#fff' : COLORS.textSecondary}
+            />
+            <Text
+              style={[
+                styles.paymentTypeText,
+                paymentType === 'lump' && styles.paymentTypeTextActive,
+              ]}
+            >
+              Lump Sum
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.editorInputLabel}>
+          {paymentType === 'monthly' ? 'Additional principal each month' : 'One-time payment'}
+        </Text>
+        <View style={styles.editorInputRow}>
+          <Text style={styles.editorPrefix}>$</Text>
+          <TextInput
+            style={styles.editorInput}
+            value={paymentType === 'monthly' ? monthlyExtra : lumpSum}
+            onChangeText={(value) => {
+              const formatted = formatInputWithCommas(value);
+              if (paymentType === 'monthly') setMonthlyExtra(formatted);
+              else setLumpSum(formatted);
+              onEdit();
+            }}
+            keyboardType="numeric"
+            maxLength={18}
+            placeholder="0"
+            placeholderTextColor={COLORS.textMuted}
+            accessibilityLabel={
+              paymentType === 'monthly'
+                ? 'Additional monthly principal'
+                : 'One-time lump-sum payment'
+            }
+          />
+          <Text style={styles.editorSuffix}>{paymentType === 'monthly' ? '/mo' : 'once'}</Text>
+        </View>
+        {projection.error ? (
+          <View style={styles.editorError} accessibilityRole="alert">
+            <Ionicons name="alert-circle" size={16} color={COLORS.red} />
+            <Text style={styles.editorErrorText}>{projection.error}</Text>
+          </View>
+        ) : null}
+        {projection.extra > 0 && projection.lump > 0 ? (
+          <Text style={styles.combinedPlanText}>
+            Combined plan: {fmtMoney(projection.extra)}/mo plus a {fmtMoney(projection.lump)}{' '}
+            one-time payment.
+          </Text>
+        ) : null}
+      </View>
+
       <Narrative>
-        {planSummary} shortens the projected payoff from {p.currentPayoffMonths} months to{' '}
-        {p.newPayoffMonths} months and saves {fmtMoney(p.interestSaved)} in interest. Extra payments
-        are treated as principal-only payments, which lowers the balance before future interest is
-        calculated. This comparison covers the auto loan only; insurance, fuel, maintenance,
-        registration, and depreciation are separate ownership costs.
+        {planSummary} changes the projected payoff from {p.currentPayoffMonths} months to{' '}
+        {projection.newPayoffMonths} months, moving the estimated payoff date from{' '}
+        {currentPayoffDate} to {acceleratedPayoffDate} and saving{' '}
+        {fmtMoney(projection.interestSaved)} in interest. Extra payments are treated as
+        principal-only payments, which lowers the balance before future interest is calculated. This
+        comparison covers the auto loan only; insurance, fuel, maintenance, registration, and
+        depreciation are separate ownership costs.
       </Narrative>
 
-      {p.currentSchedule?.length && p.newSchedule?.length ? (
+      {p.currentSchedule?.length && projection.newSchedule?.length ? (
         <>
           <Text style={[styles.sectionTitle, styles.laterSectionTitle]}>Balance Projection</Text>
           <View style={styles.chartCard}>
@@ -281,7 +397,7 @@ function PayoffResults({ p }) {
             </View>
             <BalanceLineChart
               schedule={p.currentSchedule}
-              compareSchedule={p.newSchedule}
+              compareSchedule={projection.newSchedule}
               color={COLORS.accent}
               compareColor={COLORS.green}
             />
@@ -296,6 +412,14 @@ function RefinanceResults({ p }) {
   const savesMonthly = p.monthlySavings > 0;
   const savesLifetime = p.lifetimeSavings > 0;
   const payoffDifference = p.newPayoffMonths - p.currentPayoffMonths;
+  const currentPayoffDate = formatProjectedPayoffMonth(p.currentPayoffMonths);
+  const newPayoffDate = formatProjectedPayoffMonth(p.newPayoffMonths);
+  const payoffDateNarrative =
+    payoffDifference === 0
+      ? `The estimated payoff remains ${newPayoffDate}.`
+      : `The estimated payoff moves from ${currentPayoffDate} to ${newPayoffDate}, ${Math.abs(
+          payoffDifference,
+        )} months ${payoffDifference > 0 ? 'later' : 'earlier'}.`;
   const outcomeColor = savesLifetime ? COLORS.green : COLORS.red;
   const title =
     savesMonthly && savesLifetime
@@ -331,8 +455,8 @@ function RefinanceResults({ p }) {
           <Comparison
             left={fmtMoney(p.currentPayment)}
             right={fmtMoney(p.newPayment)}
-            leftDetail={`${p.currentRate.toFixed(2)}% APR · ${p.currentPayoffMonths} mo`}
-            rightDetail={`${p.newRate.toFixed(2)}% APR · ${p.newPayoffMonths} mo`}
+            leftDetail={`${p.currentRate.toFixed(2)}% APR · ${p.currentPayoffMonths} mo\nEst. ${currentPayoffDate}`}
+            rightDetail={`${p.newRate.toFixed(2)}% APR · ${p.newPayoffMonths} mo\nEst. ${newPayoffDate}`}
           />
           <View
             style={[
@@ -405,11 +529,11 @@ function RefinanceResults({ p }) {
         The new payment is {fmtMoney(Math.abs(p.monthlySavings))}{' '}
         {savesMonthly ? 'lower' : 'higher'} each month. After the {fmtMoney(p.refinanceFees)} in
         fees, the refinance is projected to {savesLifetime ? 'save' : 'cost'}{' '}
-        {fmtMoney(Math.abs(p.lifetimeSavings))} over the remaining loan life. A lower payment does
-        not always mean a lower total cost: extending the payoff timeline can create more interest,
-        while a shorter term can raise the payment but reduce interest. The comparison excludes
-        insurance, registration, maintenance, and vehicle depreciation because refinancing does not
-        change those costs.
+        {fmtMoney(Math.abs(p.lifetimeSavings))} over the remaining loan life. {payoffDateNarrative}{' '}
+        A lower payment does not always mean a lower total cost: extending the payoff timeline can
+        create more interest, while a shorter term can raise the payment but reduce interest. The
+        comparison excludes insurance, registration, maintenance, and vehicle depreciation because
+        refinancing does not change those costs.
       </Narrative>
     </>
   );
@@ -424,10 +548,64 @@ export default function AutoResultScreen() {
   const p = route.params;
   const [name, setName] = useState(p.presetName || '');
   const [saved, setSaved] = useState(false);
+  const [paymentType, setPaymentType] = useState(p.extra > 0 ? 'monthly' : 'lump');
+  const [monthlyExtra, setMonthlyExtra] = useState(
+    p.extra > 0 ? formatInputWithCommas(String(p.extra)) : '',
+  );
+  const [lumpSum, setLumpSum] = useState(p.lump > 0 ? formatInputWithCommas(String(p.lump)) : '');
 
   const isPurchase = p.resultType === 'purchase';
   const isPayoff = p.resultType === 'payoff';
   const isRefinance = p.resultType === 'refinance';
+  const payoffProjection = useMemo(() => {
+    if (!isPayoff) return null;
+    const parseOptionalAmount = (value) =>
+      String(value ?? '').trim() === '' ? 0 : parseLoanNumber(value);
+    const parsedExtra = parseOptionalAmount(monthlyExtra);
+    const parsedLump = parseOptionalAmount(lumpSum);
+    const error =
+      !Number.isFinite(parsedExtra) || parsedExtra < 0
+        ? 'Monthly extra payment must be a valid amount of 0 or more.'
+        : !Number.isFinite(parsedLump) || parsedLump < 0
+          ? 'Lump-sum payment must be a valid amount of 0 or more.'
+          : parsedLump > p.currentBalance
+            ? 'Lump-sum payment cannot exceed the current balance.'
+            : null;
+    const extra = error ? 0 : parsedExtra;
+    const lump = error ? 0 : parsedLump;
+    const balanceAfterLump = Math.max(p.currentBalance - lump, 0);
+    const accelerated =
+      balanceAfterLump <= 0
+        ? {
+            months: 0,
+            totalInterest: 0,
+            monthlyPayment: 0,
+            schedule: [{ year: 0, balance: 0 }],
+          }
+        : amortizeWithPayment(balanceAfterLump, p.rate, p.currentPayment + extra);
+
+    return {
+      error,
+      extra,
+      lump,
+      balanceAfterLump,
+      newPayment: accelerated.monthlyPayment,
+      newPayoffMonths: accelerated.months,
+      newInterest: accelerated.totalInterest,
+      newSchedule: accelerated.schedule,
+      monthsSaved: Math.max(0, p.currentPayoffMonths - accelerated.months),
+      interestSaved: Math.max(0, p.currentInterest - accelerated.totalInterest),
+    };
+  }, [
+    isPayoff,
+    lumpSum,
+    monthlyExtra,
+    p.currentBalance,
+    p.currentInterest,
+    p.currentPayment,
+    p.currentPayoffMonths,
+    p.rate,
+  ]);
   const refinanceSaves = isRefinance && p.lifetimeSavings > 0;
   const headerColor = isRefinance && !refinanceSaves ? COLORS.red : COLORS.green;
   const headerLabel = isPurchase
@@ -440,7 +618,7 @@ export default function AutoResultScreen() {
   const headerValue = isPurchase
     ? p.monthlyPayment
     : isPayoff
-      ? p.interestSaved
+      ? payoffProjection.interestSaved
       : Math.abs(p.lifetimeSavings);
   const headerTitle = isPurchase
     ? 'Your Auto Purchase'
@@ -450,7 +628,9 @@ export default function AutoResultScreen() {
   const headerSub = isPurchase
     ? `${p.rate.toFixed(2)}% APR · ${p.term} months`
     : isPayoff
-      ? `Paid off ${p.monthsSaved} months sooner`
+      ? payoffProjection.monthsSaved > 0
+        ? `Paid off ${payoffProjection.monthsSaved} months sooner`
+        : 'No payoff-time change'
       : 'after estimated refinance fees';
 
   const saveResult = async () => {
@@ -463,6 +643,8 @@ export default function AutoResultScreen() {
     const results = isPurchase
       ? {
           price: p.price,
+          downPayment: p.downPayment,
+          tradeIn: p.tradeIn,
           financed: p.amountFinanced,
           rate: p.rate,
           term: p.term,
@@ -477,12 +659,14 @@ export default function AutoResultScreen() {
             rate: p.rate,
             originalTerm: p.originalTerm,
             monthsRemaining: p.monthsRemaining,
-            extra: p.extra,
-            lump: p.lump,
-            monthlyPayment: p.newPayment,
-            payoffMonths: p.newPayoffMonths,
-            monthsSaved: p.monthsSaved,
-            interestSaved: p.interestSaved,
+            extra: payoffProjection.extra,
+            lump: payoffProjection.lump,
+            monthlyPayment: payoffProjection.newPayment,
+            payoffMonths: payoffProjection.newPayoffMonths,
+            currentPayoffDate: formatProjectedPayoffMonth(p.currentPayoffMonths),
+            projectedPayoffDate: formatProjectedPayoffMonth(payoffProjection.newPayoffMonths),
+            monthsSaved: payoffProjection.monthsSaved,
+            interestSaved: payoffProjection.interestSaved,
           }
         : {
             balance: p.currentBalance,
@@ -490,14 +674,27 @@ export default function AutoResultScreen() {
             newRate: p.newRate,
             monthlySavings: p.monthlySavings,
             netSavings: p.lifetimeSavings,
+            currentPayoffDate: formatProjectedPayoffMonth(p.currentPayoffMonths),
+            newPayoffDate: formatProjectedPayoffMonth(p.newPayoffMonths),
             worthIt: p.lifetimeSavings > 0,
           };
 
     try {
+      if (payoffProjection?.error) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        Alert.alert('Check Your Payment', payoffProjection.error);
+        return;
+      }
       await addSavedScenario({
         type,
         name: name.trim() || defaultName,
-        inputs: p.inputs,
+        inputs: isPayoff
+          ? {
+              ...p.inputs,
+              pExtra: formatInputWithCommas(String(payoffProjection.extra)),
+              pLump: formatInputWithCommas(String(payoffProjection.lump)),
+            }
+          : p.inputs,
         results,
       });
       setSaved(true);
@@ -562,7 +759,19 @@ export default function AutoResultScreen() {
           showsVerticalScrollIndicator={false}
         >
           {isPurchase ? <PurchaseResults p={p} /> : null}
-          {isPayoff ? <PayoffResults p={p} /> : null}
+          {isPayoff ? (
+            <PayoffResults
+              p={p}
+              projection={payoffProjection}
+              paymentType={paymentType}
+              setPaymentType={setPaymentType}
+              monthlyExtra={monthlyExtra}
+              setMonthlyExtra={setMonthlyExtra}
+              lumpSum={lumpSum}
+              setLumpSum={setLumpSum}
+              onEdit={() => setSaved(false)}
+            />
+          ) : null}
           {isRefinance ? <RefinanceResults p={p} /> : null}
 
           <Text style={[styles.sectionTitle, styles.saveTitle]}>
@@ -648,6 +857,76 @@ const styles = StyleSheet.create({
   },
   laterSectionTitle: { marginTop: 24 },
   saveTitle: { marginTop: 24 },
+  planEditorCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '55',
+    padding: 18,
+  },
+  planEditorTitle: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '800' },
+  planEditorSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  paymentTypeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 13,
+    padding: 4,
+    marginTop: 16,
+  },
+  paymentTypeBtn: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: 8,
+  },
+  paymentTypeBtnActive: { backgroundColor: COLORS.accent },
+  paymentTypeText: {
+    color: COLORS.textSecondary,
+    fontSize: 12.5,
+    fontWeight: '700',
+    textAlign: 'center',
+    flexShrink: 1,
+  },
+  paymentTypeTextActive: { color: '#fff' },
+  editorInputLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  editorInputRow: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 14,
+  },
+  editorPrefix: { color: COLORS.accent, fontSize: 19, fontWeight: '800', marginRight: 6 },
+  editorInput: { flex: 1, color: COLORS.textPrimary, fontSize: 19, fontWeight: '800' },
+  editorSuffix: { color: COLORS.textMuted, fontSize: 13, fontWeight: '700', marginLeft: 8 },
+  editorError: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 10 },
+  editorErrorText: { color: COLORS.red, fontSize: 12, fontWeight: '600', flex: 1 },
+  combinedPlanText: {
+    color: COLORS.teal,
+    fontSize: 11.5,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: 10,
+  },
   analysisCard: {
     backgroundColor: COLORS.card,
     borderRadius: 18,

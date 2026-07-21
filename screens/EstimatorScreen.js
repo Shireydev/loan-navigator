@@ -207,7 +207,7 @@ export default function EstimatorScreen() {
   const perOf = (freq) => FREQS.find((f) => f.key === freq)?.per || 1;
 
   const priceN = num(price);
-  const downN = num(down);
+  const downN = String(down ?? '').trim() === '' ? 0 : num(down);
   const rateN = num(rate);
   const termN = num(term);
   const taxN = num(tax);
@@ -365,7 +365,7 @@ export default function EstimatorScreen() {
         iconAccessibilityLabel="Return to home"
       />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         <ScrollView
@@ -952,12 +952,20 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: COLORS.accent,
     borderRadius: 12,
-    height: 46,
+    minHeight: 46,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  applyAllText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  applyAllText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+    flexShrink: 1,
+  },
   zipDisclaimer: {
     color: COLORS.textMuted,
     fontSize: 11,

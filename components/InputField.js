@@ -34,6 +34,7 @@ export default function InputField({
           placeholder={placeholder}
           placeholderTextColor={COLORS.textMuted}
           keyboardType={keyboardType}
+          maxLength={formatCommas && keyboardType === 'numeric' ? 18 : undefined}
         />
         {suffix ? <Text style={styles.suffix}>{suffix}</Text> : null}
       </View>

@@ -28,6 +28,11 @@ export const STORAGE_KEYS = {
   DEFAULTS: '@mortgage_defaults_v1',
 };
 
+// Keeps calculator values well inside JavaScript's safe-integer range and
+// prevents extremely long input from reaching amortization calculations.
+export const MAX_INPUT_INTEGER_DIGITS = 12;
+export const MAX_INPUT_DECIMAL_DIGITS = 2;
+
 export function fmtMoney(n, decimals = 0) {
   if (n === null || n === undefined || isNaN(n)) return '$0';
   return (
@@ -60,6 +65,9 @@ export function formatInputWithCommas(raw) {
   const hasDot = cleaned.indexOf('.') !== -1;
   let [intPart, decPart = ''] = cleaned.split('.');
 
+  intPart = intPart.slice(0, MAX_INPUT_INTEGER_DIGITS);
+  decPart = decPart.slice(0, MAX_INPUT_DECIMAL_DIGITS);
+
   // Strip leading zeros in the integer part but keep a single leading zero
   // (e.g. "0.5").
   intPart = intPart.replace(/^0+(?=\d)/, '');
@@ -82,8 +90,84 @@ export function parseLoanNumber(value) {
 
   if (!/^(?:\d+\.?\d*|\.\d+)$/.test(normalized)) return NaN;
 
+  const [integerPart = '', decimalPart = ''] = normalized.split('.');
+  if (
+    integerPart.length > MAX_INPUT_INTEGER_DIGITS ||
+    decimalPart.length > MAX_INPUT_DECIMAL_DIGITS
+  ) {
+    return NaN;
+  }
+
   const number = Number(normalized);
   return Number.isFinite(number) ? number : NaN;
+}
+
+// Derive the current point in a loan from its calendar start month. Month is
+// one-based (January = 1). Keeping the calculation month-based avoids partial
+// year rounding in payoff and refinance amortization schedules.
+export function getLoanTimeline(startMonth, startYear, termMonths, asOf = new Date()) {
+  if (!Number.isInteger(startMonth) || startMonth < 1 || startMonth > 12) {
+    return { elapsedMonths: NaN, remainingMonths: NaN, error: 'Start month must be from 1 to 12.' };
+  }
+  if (!Number.isInteger(startYear) || startYear < 1900) {
+    return { elapsedMonths: NaN, remainingMonths: NaN, error: 'Start year must be valid.' };
+  }
+  if (!Number.isInteger(termMonths) || termMonths < 1) {
+    return { elapsedMonths: NaN, remainingMonths: NaN, error: 'Loan term must be a whole number.' };
+  }
+
+  const currentYear = asOf.getFullYear();
+  const currentMonth = asOf.getMonth() + 1;
+  const elapsedMonths = (currentYear - startYear) * 12 + (currentMonth - startMonth);
+
+  if (elapsedMonths < 0) {
+    return {
+      elapsedMonths,
+      remainingMonths: NaN,
+      error: 'Loan start date cannot be in the future.',
+    };
+  }
+
+  const remainingMonths = termMonths - elapsedMonths;
+  if (remainingMonths <= 0) {
+    return {
+      elapsedMonths,
+      remainingMonths,
+      error: 'The loan start date and term indicate that the loan has already ended.',
+    };
+  }
+
+  return { elapsedMonths, remainingMonths, error: null };
+}
+
+// Convert legacy saved scenarios that only stored a remaining term into the
+// equivalent start month/year without changing their calculated loan age.
+export function loanStartFromRemainingMonths(
+  originalTermMonths,
+  remainingMonths,
+  asOf = new Date(),
+) {
+  const safeOriginal = Number.isFinite(originalTermMonths) ? Math.round(originalTermMonths) : 0;
+  const safeRemaining = Number.isFinite(remainingMonths)
+    ? Math.round(remainingMonths)
+    : safeOriginal;
+  const elapsedMonths = Math.max(0, safeOriginal - safeRemaining);
+  const currentIndex = asOf.getFullYear() * 12 + asOf.getMonth();
+  const startIndex = currentIndex - elapsedMonths;
+
+  return {
+    startMonth: (startIndex % 12) + 1,
+    startYear: Math.floor(startIndex / 12),
+  };
+}
+
+// Convert a payoff duration into a planning-friendly calendar month. Loan
+// calculations run in whole monthly periods, so a month/year is more precise
+// than presenting an arbitrary day of month.
+export function formatProjectedPayoffMonth(months, asOf = new Date()) {
+  if (!Number.isFinite(months) || months < 0) return '—';
+  const payoffDate = new Date(asOf.getFullYear(), asOf.getMonth() + Math.round(months), 1);
+  return payoffDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
 function rangeError(label, value, { min = 0, max = Infinity, allowZero = true } = {}) {

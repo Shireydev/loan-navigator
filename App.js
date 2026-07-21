@@ -1,6 +1,6 @@
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import React, { useCallback, useState } from 'react';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -72,45 +72,54 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar style="light" />
         <NavigationContainer>
-          <Tab.Navigator
-            screenListeners={({ route }) => ({
-              tabPress: () => requestTabScrollToTop(route.name),
-            })}
-            screenOptions={({ route }) => ({
-              headerShown: false,
-              tabBarActiveTintColor: COLORS.accent,
-              tabBarInactiveTintColor: COLORS.textMuted,
-              tabBarStyle: {
-                backgroundColor: COLORS.surface,
-                borderTopColor: COLORS.border,
-                borderTopWidth: 1,
-                height: 88,
-                paddingTop: 8,
-                paddingBottom: 28,
-              },
-              tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-              tabBarIcon: ({ color, size }) => {
-                let icon = 'home';
-                if (route.name === 'Home') icon = 'grid';
-                else if (route.name === 'Estimate') icon = 'calculator';
-                else if (route.name === 'Payoff') icon = 'trending-down';
-                else if (route.name === 'Refinance') icon = 'swap-horizontal';
-                else if (route.name === 'Auto') icon = 'car-sport';
-                else if (route.name === 'Saved') icon = 'bookmark';
-                return <Ionicons name={icon} size={size} color={color} />;
-              },
-            })}
-          >
-            <Tab.Screen name="Home" component={LandingScreen} />
-            <Tab.Screen name="Estimate" component={EstimatorStackNavigator} />
-            <Tab.Screen name="Payoff" component={PayoffStackNavigator} />
-            <Tab.Screen name="Refinance" component={RefinanceStackNavigator} />
-            <Tab.Screen name="Auto" component={AutoStackNavigator} />
-            <Tab.Screen name="Saved" component={SavedScreen} />
-          </Tab.Navigator>
+          <AppTabs />
         </NavigationContainer>
         {showStartupSplash ? <StartupSplash onFinish={finishStartupSplash} /> : null}
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+function AppTabs() {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Tab.Navigator
+      screenListeners={({ route }) => ({
+        tabPress: () => requestTabScrollToTop(route.name),
+      })}
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarActiveTintColor: COLORS.accent,
+        tabBarInactiveTintColor: COLORS.textMuted,
+        tabBarStyle: {
+          backgroundColor: COLORS.surface,
+          borderTopColor: COLORS.border,
+          borderTopWidth: 1,
+          height: 60 + insets.bottom,
+          paddingTop: 8,
+          paddingBottom: Math.max(insets.bottom, 8),
+        },
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarIcon: ({ color, size }) => {
+          let icon = 'home';
+          if (route.name === 'Home') icon = 'grid';
+          else if (route.name === 'Estimate') icon = 'calculator';
+          else if (route.name === 'Payoff') icon = 'trending-down';
+          else if (route.name === 'Refinance') icon = 'swap-horizontal';
+          else if (route.name === 'Auto') icon = 'car-sport';
+          else if (route.name === 'Saved') icon = 'bookmark';
+          return <Ionicons name={icon} size={size} color={color} />;
+        },
+      })}
+    >
+      <Tab.Screen name="Home" component={LandingScreen} />
+      <Tab.Screen name="Estimate" component={EstimatorStackNavigator} />
+      <Tab.Screen name="Payoff" component={PayoffStackNavigator} />
+      <Tab.Screen name="Refinance" component={RefinanceStackNavigator} />
+      <Tab.Screen name="Auto" component={AutoStackNavigator} />
+      <Tab.Screen name="Saved" component={SavedScreen} />
+    </Tab.Navigator>
   );
 }

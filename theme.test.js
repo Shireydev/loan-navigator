@@ -24,6 +24,10 @@ const {
   amortize,
   amortizeWithPayment,
   formatInputWithCommas,
+  formatProjectedPayoffMonth,
+  getLoanTimeline,
+  loanStartFromRemainingMonths,
+  parseLoanNumber,
   remainingBalanceFromOriginal,
 } = loadAppModule('theme.js');
 const { getStateBaseSalesTaxRate } = loadAppModule('taxApi.js');
@@ -100,6 +104,36 @@ test('numeric input formatting preserves decimals and separators', () => {
   assert.equal(formatInputWithCommas('0012345.67'), '12,345.67');
   assert.equal(formatInputWithCommas('12.3.4'), '12.34');
   assert.equal(formatInputWithCommas(''), '');
+});
+
+test('numeric input is capped before unsafe values reach calculations', () => {
+  assert.equal(formatInputWithCommas('123456789012345.6789'), '123,456,789,012.67');
+  assert.equal(parseLoanNumber('123,456,789,012.67'), 123456789012.67);
+  assert.ok(Number.isNaN(parseLoanNumber('1234567890123')));
+  assert.ok(Number.isNaN(parseLoanNumber('100.001')));
+});
+
+test('loan timeline derives exact elapsed and remaining calendar months', () => {
+  const timeline = getLoanTimeline(3, 2024, 60, new Date(2026, 6, 20));
+
+  assert.deepEqual(timeline, { elapsedMonths: 28, remainingMonths: 32, error: null });
+});
+
+test('loan timeline rejects future starts and completed terms', () => {
+  assert.match(getLoanTimeline(8, 2026, 60, new Date(2026, 6, 20)).error, /future/);
+  assert.match(getLoanTimeline(7, 2020, 60, new Date(2026, 6, 20)).error, /already ended/);
+});
+
+test('legacy remaining terms convert to an equivalent start month', () => {
+  assert.deepEqual(loanStartFromRemainingMonths(360, 324, new Date(2026, 6, 20)), {
+    startMonth: 7,
+    startYear: 2023,
+  });
+});
+
+test('payoff duration converts to a projected calendar month', () => {
+  assert.equal(formatProjectedPayoffMonth(18, new Date(2026, 6, 20)), 'January 2028');
+  assert.equal(formatProjectedPayoffMonth(0, new Date(2026, 6, 20)), 'July 2026');
 });
 
 test('state sales-tax lookup accepts standard state codes', () => {

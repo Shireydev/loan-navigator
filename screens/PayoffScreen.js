@@ -23,6 +23,8 @@ import {
   amortizeWithPayment,
   fmtMoney,
   formatInputWithCommas,
+  getLoanTimeline,
+  loanStartFromRemainingMonths,
   parseLoanNumber,
   remainingBalanceFromOriginal,
   validatePayoffScenario,
@@ -35,6 +37,7 @@ import { publishPayoffLoan } from '../components/mortgageLoanHandoff';
 
 const PRESETS = [50, 100, 200, 500];
 const LUMP_PRESETS = [5000, 10000, 25000, 50000];
+const DEFAULT_MORTGAGE_START = loanStartFromRemainingMonths(30 * 12, 27 * 12);
 const FREQS = [
   { key: 'monthly', label: 'Monthly', per: 1 },
   { key: 'quarterly', label: 'Quarterly', per: 3 },
@@ -105,10 +108,9 @@ function CostSummary({ label, value, color }) {
   );
 }
 
-// Given the ORIGINAL loan amount, its rate, the original term (years) and how
-// many years remain, compute the current remaining balance. This lets us build
-// an accurate amortization schedule from the borrower's true position — the
-// remaining balance is derived rather than guessed.
+// Advance the original loan's amortization schedule from its calendar start
+// date to derive the current balance rather than asking the borrower to guess
+// how many years remain.
 export default function PayoffScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -117,7 +119,8 @@ export default function PayoffScreen() {
   const [origLoan, setOrigLoan] = useState(formatInputWithCommas('400000'));
   const [rate, setRate] = useState('6.75');
   const [origYears, setOrigYears] = useState('30');
-  const [yearsLeft, setYearsLeft] = useState('27');
+  const [startMonth, setStartMonth] = useState(String(DEFAULT_MORTGAGE_START.startMonth));
+  const [startYear, setStartYear] = useState(String(DEFAULT_MORTGAGE_START.startYear));
   const [manualBalance, setManualBalance] = useState(null);
   const [extra, setExtra] = useState('200');
   const [lump, setLump] = useState('0');
@@ -149,8 +152,12 @@ export default function PayoffScreen() {
     const i = item.inputs;
     setOrigLoan(i.origLoan ?? formatInputWithCommas('400000'));
     setRate(i.rate ?? '6.75');
+    const restoredTerm = parseLoanNumber(i.origYears ?? '30');
+    const legacyRemaining = parseLoanNumber(i.yearsLeft ?? '27');
+    const restoredStart = loanStartFromRemainingMonths(restoredTerm * 12, legacyRemaining * 12);
     setOrigYears(i.origYears ?? '30');
-    setYearsLeft(i.yearsLeft ?? '27');
+    setStartMonth(String(i.startMonth ?? restoredStart.startMonth));
+    setStartYear(String(i.startYear ?? restoredStart.startYear));
     const restoredBalance = parseLoanNumber(i.currentBalance);
     setManualBalance(
       i.balanceAdjusted && Number.isFinite(restoredBalance)
@@ -184,8 +191,12 @@ export default function PayoffScreen() {
 
     setOrigLoan(i.origLoan ?? formatInputWithCommas('400000'));
     setRate(i.rate ?? '6.75');
+    const prefillTerm = parseLoanNumber(i.origYears ?? '30');
+    const legacyRemaining = parseLoanNumber(i.yearsLeft ?? i.origYears ?? '30');
+    const prefillStart = loanStartFromRemainingMonths(prefillTerm * 12, legacyRemaining * 12);
     setOrigYears(i.origYears ?? '30');
-    setYearsLeft(i.yearsLeft ?? i.origYears ?? '30');
+    setStartMonth(String(i.startMonth ?? prefillStart.startMonth));
+    setStartYear(String(i.startYear ?? prefillStart.startYear));
     setManualBalance(null);
     setExtra(i.extra ?? '200');
     setLump(i.lump ?? '0');
@@ -212,7 +223,11 @@ export default function PayoffScreen() {
   const origLoanN = parseLoanNumber(origLoan);
   const rateN = parseLoanNumber(rate);
   const origYearsN = parseLoanNumber(origYears);
-  const yearsLeftN = parseLoanNumber(yearsLeft);
+  const startMonthN = parseLoanNumber(startMonth);
+  const startYearN = parseLoanNumber(startYear);
+  const loanTimeline = getLoanTimeline(startMonthN, startYearN, origYearsN * 12);
+  const remainingMonths = loanTimeline.remainingMonths;
+  const yearsLeftN = remainingMonths / 12;
   const extraN = parseLoanNumber(extra);
   const lumpN = parseLoanNumber(lump);
   const homeValueN = parseLoanNumber(homeValue);
@@ -227,21 +242,23 @@ export default function PayoffScreen() {
   const hoaMonthly = Number.isFinite(hoaN) ? hoaN / perOf(hoaFreq) : 0;
   const housingCostsMonthly = taxMonthly + insuranceMonthly + pmiMonthly + hoaMonthly;
 
-  const baseValidationError = validatePayoffScenario({
-    originalLoan: origLoanN,
-    rate: rateN,
-    originalTerm: origYearsN,
-    remainingTerm: yearsLeftN,
-    extra: extraN,
-    lump: lumpN,
-    termLabel: 'term',
-    maxTerm: 50,
-  });
+  const baseValidationError =
+    loanTimeline.error ||
+    validatePayoffScenario({
+      originalLoan: origLoanN,
+      rate: rateN,
+      originalTerm: origYearsN,
+      remainingTerm: yearsLeftN,
+      extra: extraN,
+      lump: lumpN,
+      termLabel: 'term',
+      maxTerm: 50,
+    });
 
   // Derive the current balance as a default, while allowing borrowers who know
   // the exact figure to replace it (for example, after prior extra principal).
   const estimatedBalance = !baseValidationError
-    ? remainingBalanceFromOriginal(origLoanN, rateN, origYearsN * 12, yearsLeftN * 12)
+    ? remainingBalanceFromOriginal(origLoanN, rateN, origYearsN * 12, remainingMonths)
     : 0;
   const manualBalanceN = manualBalance == null ? NaN : parseLoanNumber(manualBalance);
   const balN = manualBalance == null ? estimatedBalance : manualBalanceN;
@@ -288,13 +305,27 @@ export default function PayoffScreen() {
       originalLoan: origLoan,
       curRate: rate,
       origYears,
-      curYears: yearsLeft,
+      startMonth,
+      startYear,
+      curYears: String(yearsLeftN),
       currentBalance: formatInputWithCommas(String(Math.round(balN))),
       balanceAdjusted: manualBalance != null,
       zip,
       name,
     });
-  }, [balN, loanValidationError, manualBalance, name, origLoan, origYears, rate, yearsLeft, zip]);
+  }, [
+    balN,
+    loanValidationError,
+    manualBalance,
+    name,
+    origLoan,
+    origYears,
+    rate,
+    startMonth,
+    startYear,
+    yearsLeftN,
+    zip,
+  ]);
 
   // Keep the payment established by the original loan terms. Entering an exact
   // lower balance should shorten payoff, not recast the required payment.
@@ -408,11 +439,13 @@ export default function PayoffScreen() {
           originalLoan: origLoan,
           curRate: rate,
           origYears,
-          curYears: yearsLeft,
+          startMonth,
+          startYear,
+          curYears: String(yearsLeftN),
           currentBalance: formatInputWithCommas(String(Math.round(balN))),
           balanceAdjusted: manualBalance != null,
           newRate: '6.00',
-          newTerm: yearsLeft,
+          newTerm: String(Math.max(1, Math.ceil(yearsLeftN))),
           costs: formatInputWithCommas('10000'),
           zip,
           name: name ? `${name} Refinance` : '',
@@ -462,7 +495,8 @@ export default function PayoffScreen() {
         origLoan,
         rate,
         origYears,
-        yearsLeft,
+        startMonth,
+        startYear,
         currentBalance: formatInputWithCommas(String(Math.round(balN))),
         balanceAdjusted: manualBalance != null,
         extra,
@@ -493,7 +527,7 @@ export default function PayoffScreen() {
         iconAccessibilityLabel="Return to home"
       />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         <ScrollView
@@ -525,23 +559,30 @@ export default function PayoffScreen() {
                 />
               </View>
             </View>
+            <InputField
+              label="Loan Term"
+              value={origYears}
+              onChangeText={setOrigYears}
+              suffix="yr"
+              accentColor={COLORS.pink}
+            />
             <View style={styles.rowInputs}>
               <View style={{ flex: 1 }}>
                 <InputField
-                  label="Original Term"
-                  value={origYears}
-                  onChangeText={setOrigYears}
-                  suffix="yr"
-                  accentColor={COLORS.pink}
+                  label="Start Month"
+                  value={startMonth}
+                  onChangeText={setStartMonth}
+                  placeholder="1–12"
+                  accentColor={COLORS.teal}
                 />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <InputField
-                  label="Years Remaining"
-                  value={yearsLeft}
-                  onChangeText={setYearsLeft}
-                  suffix="yr"
+                  label="Start Year"
+                  value={startYear}
+                  onChangeText={setStartYear}
+                  placeholder="YYYY"
                   accentColor={COLORS.teal}
                 />
               </View>
@@ -1118,8 +1159,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 14,
     paddingHorizontal: 12,
+    paddingVertical: 12,
   },
-  applyAllText: { color: '#fff', fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  applyAllText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+    flexShrink: 1,
+  },
   zipDisclaimer: {
     color: COLORS.textMuted,
     fontSize: 11,

@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-
     "plugins": [
       [
         "expo-splash-screen",
@@ -22,20 +21,21 @@
         }
       ]
     ],
-
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.wron.app0y11op2ify"
+      "supportsTablet": false,
+      "bundleIdentifier": "com.dsapps.loannavigator",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
-
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#061735"
       },
       "package": "com.wron.app0y11op2ify"
     },
-
     "extra": {
       "eas": {
         "projectId": "a085b6cb-d13e-40a9-ae1b-4e4ebe35db1f"

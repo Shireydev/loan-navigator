@@ -17,7 +17,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import DonutChart from '../components/DonutChart';
-import { COLORS, amortize, monthlyPI, fmtMoney, formatInputWithCommas } from '../theme';
+import {
+  COLORS,
+  amortize,
+  monthlyPI,
+  fmtMoney,
+  formatInputWithCommas,
+  loanStartFromRemainingMonths,
+} from '../theme';
 import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
 import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 
@@ -102,6 +109,8 @@ export default function ResultScreen({ route }) {
 
   const exploreFasterPayoff = () => {
     const inputs = p.inputs || {};
+    const loanTerm = Number(inputs.term ?? p.term);
+    const loanStart = loanStartFromRemainingMonths(loanTerm * 12, loanTerm * 12);
     Haptics.selectionAsync();
     navigation.getParent()?.navigate('Payoff', {
       screen: 'PayoffHome',
@@ -110,7 +119,8 @@ export default function ResultScreen({ route }) {
           origLoan: inputs.loanAmount ?? formatInputWithCommas(String(Math.round(p.loanAmount))),
           rate: inputs.rate ?? String(p.rate),
           origYears: String(inputs.term ?? p.term),
-          yearsLeft: String(inputs.term ?? p.term),
+          startMonth: String(loanStart.startMonth),
+          startYear: String(loanStart.startYear),
           extra: '200',
           lump: '0',
           homeValue: inputs.price ?? formatInputWithCommas(String(Math.round(p.price))),
@@ -234,6 +244,7 @@ export default function ResultScreen({ route }) {
         inputs: p.inputs,
         results: {
           price: p.price,
+          downPayment: p.down,
           loanAmount: p.loanAmount,
           rate: p.rate,
           term: p.term,

@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
-import { COLORS, fmtMoney } from '../theme';
+import { COLORS, fmtMoney, formatProjectedPayoffMonth } from '../theme';
 import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 import { addSavedScenario, SCENARIO_TYPES } from '../savedScenarios';
 
@@ -38,6 +38,8 @@ export default function RefinanceResultScreen() {
   const p = route.params;
   const [name, setName] = useState(p.presetName || '');
   const [saved, setSaved] = useState(false);
+  const currentPayoffDate = formatProjectedPayoffMonth(p.currentPayoffMonths);
+  const newPayoffDate = formatProjectedPayoffMonth(p.newPayoffMonths);
 
   const lowersPayment = p.monthlySavings > 0;
   const savesLifetime = p.lifetimeSavings > 0;
@@ -80,10 +82,10 @@ export default function RefinanceResultScreen() {
     : `After the ${fmtMoney(p.closingCosts)} closing costs, the refinance is projected to cost ${fmtMoney(Math.abs(p.lifetimeSavings))} more over the remaining life of the loan.`;
   const timelineNarrative =
     payoffMonthDifference > 0
-      ? `The new payoff schedule is about ${payoffMonthDifference} months longer, which can reduce the payment while increasing long-term interest.`
+      ? `The new payoff schedule is about ${payoffMonthDifference} months longer, moving the estimated payoff from ${currentPayoffDate} to ${newPayoffDate}.`
       : payoffMonthDifference < 0
-        ? `The new payoff schedule is about ${Math.abs(payoffMonthDifference)} months shorter, which can raise the payment while reducing long-term interest.`
-        : 'The estimated payoff timeline is essentially unchanged.';
+        ? `The new payoff schedule is about ${Math.abs(payoffMonthDifference)} months shorter, moving the estimated payoff from ${currentPayoffDate} to ${newPayoffDate}.`
+        : `The estimated payoff timeline is essentially unchanged at ${newPayoffDate}.`;
   const breakEvenNarrative =
     lowersPayment && Number.isFinite(p.breakEven)
       ? `It takes about ${p.breakEven.toFixed(1)} months of payment savings to recover the closing costs.`
@@ -102,6 +104,8 @@ export default function RefinanceResultScreen() {
           newRate: p.newRate,
           origYears: p.originalTerm,
           yearsLeft: p.yearsLeft,
+          currentPayoffDate,
+          newPayoffDate,
           monthlySavings: p.monthlySavings,
           breakEven: p.breakEven,
           lifetimeSavings: p.lifetimeSavings,
@@ -204,7 +208,8 @@ export default function RefinanceResultScreen() {
                   <Text style={styles.paymentCompareLabel}>CURRENT</Text>
                   <Text style={styles.paymentCompareValue}>{fmtMoney(p.currentPayment)}</Text>
                   <Text style={styles.paymentCompareSub}>
-                    {p.currentRate.toFixed(2)}% APR · {p.currentPayoffMonths} mo left
+                    {p.currentRate.toFixed(2)}% APR · {p.currentPayoffMonths} mo left{`\n`}Est.{' '}
+                    {currentPayoffDate}
                   </Text>
                 </View>
                 <Ionicons name="arrow-forward" size={21} color={COLORS.textMuted} />
@@ -212,7 +217,7 @@ export default function RefinanceResultScreen() {
                   <Text style={styles.paymentCompareLabel}>NEW</Text>
                   <Text style={styles.paymentCompareValue}>{fmtMoney(p.newPayment)}</Text>
                   <Text style={styles.paymentCompareSub}>
-                    {p.newRate.toFixed(2)}% APR · {p.newPayoffMonths} mo
+                    {p.newRate.toFixed(2)}% APR · {p.newPayoffMonths} mo{`\n`}Est. {newPayoffDate}
                   </Text>
                 </View>
               </View>

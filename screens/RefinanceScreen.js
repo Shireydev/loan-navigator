@@ -24,6 +24,8 @@ import {
   amortizeWithPayment,
   fmtMoney,
   formatInputWithCommas,
+  getLoanTimeline,
+  loanStartFromRemainingMonths,
   parseLoanNumber,
   originalLoanFromRemainingBalance,
   remainingBalanceFromOriginal,
@@ -35,9 +37,10 @@ import { SCENARIO_TYPES } from '../savedScenarios';
 import useScrollToTopOnFocus from '../components/useScrollToTopOnFocus';
 import { getLatestPayoffLoan } from '../components/mortgageLoanHandoff';
 
-// Given an original loan (balance implied) at a rate, original term, and how many
-// years are left, recover the ORIGINAL loan amount so we can build an accurate
-// amortization schedule that matches the borrower's true remaining trajectory.
+const DEFAULT_MORTGAGE_START = loanStartFromRemainingMonths(30 * 12, 27 * 12);
+
+// Advance the original loan's amortization schedule from its calendar start
+// date so the refinance comparison matches the current remaining trajectory.
 export default function RefinanceScreen() {
   const route = useRoute();
   const navigation = useNavigation();
@@ -47,7 +50,8 @@ export default function RefinanceScreen() {
   const [balance, setBalance] = useState(formatInputWithCommas('500000'));
   const [curRate, setCurRate] = useState('7.25');
   const [origYears, setOrigYears] = useState('30');
-  const [curYears, setCurYears] = useState('27');
+  const [startMonth, setStartMonth] = useState(String(DEFAULT_MORTGAGE_START.startMonth));
+  const [startYear, setStartYear] = useState(String(DEFAULT_MORTGAGE_START.startYear));
   const [manualBalance, setManualBalance] = useState(null);
   const [newRate, setNewRate] = useState('6.00');
   const [newTerm, setNewTerm] = useState('30');
@@ -79,10 +83,14 @@ export default function RefinanceScreen() {
       const i = handoff.details;
       setBalance(i.originalLoan ?? formatInputWithCommas('500000'));
       setCurRate(i.curRate ?? '7.25');
+      const handoffTerm = parseLoanNumber(i.origYears ?? '30');
+      const handoffRemaining = parseLoanNumber(i.curYears ?? '27');
+      const handoffStart = loanStartFromRemainingMonths(handoffTerm * 12, handoffRemaining * 12);
       setOrigYears(i.origYears ?? '30');
-      setCurYears(i.curYears ?? '27');
+      setStartMonth(String(i.startMonth ?? handoffStart.startMonth));
+      setStartYear(String(i.startYear ?? handoffStart.startYear));
       setManualBalance(i.balanceAdjusted && i.currentBalance != null ? i.currentBalance : null);
-      setNewTerm(i.curYears ?? '30');
+      setNewTerm(String(Math.max(1, Math.ceil(handoffRemaining))));
       setZip(i.zip ?? '');
       setZipError('');
       setZipInfo(null);
@@ -138,8 +146,12 @@ export default function RefinanceScreen() {
           : formatInputWithCommas('500000'),
       );
       setCurRate(i.curRate ?? '7.25');
+      const restoredTerm = parseLoanNumber(i.origYears ?? '30');
+      const restoredRemaining = parseLoanNumber(i.curYears ?? '27');
+      const restoredStart = loanStartFromRemainingMonths(restoredTerm * 12, restoredRemaining * 12);
       setOrigYears(i.origYears ?? '30');
-      setCurYears(i.curYears ?? '27');
+      setStartMonth(String(i.startMonth ?? restoredStart.startMonth));
+      setStartYear(String(i.startYear ?? restoredStart.startYear));
       setNewRate(i.newRate ?? '6.00');
       setNewTerm(i.newTerm ?? '30');
       const restoredCostsN = parseLoanNumber(i.costs);
@@ -162,8 +174,12 @@ export default function RefinanceScreen() {
 
     setBalance(i.originalLoan ?? formatInputWithCommas('500000'));
     setCurRate(i.curRate ?? '7.25');
+    const prefillTerm = parseLoanNumber(i.origYears ?? '30');
+    const prefillRemaining = parseLoanNumber(i.curYears ?? '27');
+    const prefillStart = loanStartFromRemainingMonths(prefillTerm * 12, prefillRemaining * 12);
     setOrigYears(i.origYears ?? '30');
-    setCurYears(i.curYears ?? '27');
+    setStartMonth(String(i.startMonth ?? prefillStart.startMonth));
+    setStartYear(String(i.startYear ?? prefillStart.startYear));
     setManualBalance(i.balanceAdjusted && i.currentBalance != null ? i.currentBalance : null);
     setNewRate(i.newRate ?? '6.00');
     setNewTerm(i.newTerm ?? i.curYears ?? '30');
@@ -180,23 +196,29 @@ export default function RefinanceScreen() {
   const num = parseLoanNumber;
   const originalLoanN = num(balance);
   const origYearsN = num(origYears);
-  const yearsLeftN = num(curYears);
+  const startMonthN = num(startMonth);
+  const startYearN = num(startYear);
+  const loanTimeline = getLoanTimeline(startMonthN, startYearN, origYearsN * 12);
+  const remainingMonths = loanTimeline.remainingMonths;
+  const yearsLeftN = remainingMonths / 12;
   const newTermN = num(newTerm);
-  const baseValidationError = validateRefinanceScenario({
-    balance: originalLoanN,
-    balanceLabel: 'Original loan amount',
-    currentRate: num(curRate),
-    originalTerm: origYearsN,
-    remainingTerm: yearsLeftN,
-    newRate: num(newRate),
-    newTerm: newTermN,
-    costs: num(costs),
-    termLabel: 'term',
-    maxTerm: 50,
-  });
+  const baseValidationError =
+    loanTimeline.error ||
+    validateRefinanceScenario({
+      balance: originalLoanN,
+      balanceLabel: 'Original loan amount',
+      currentRate: num(curRate),
+      originalTerm: origYearsN,
+      remainingTerm: yearsLeftN,
+      newRate: num(newRate),
+      newTerm: newTermN,
+      costs: num(costs),
+      termLabel: 'term',
+      maxTerm: 50,
+    });
 
   const estimatedBalance = !baseValidationError
-    ? remainingBalanceFromOriginal(originalLoanN, num(curRate), origYearsN * 12, yearsLeftN * 12)
+    ? remainingBalanceFromOriginal(originalLoanN, num(curRate), origYearsN * 12, remainingMonths)
     : 0;
   const manualBalanceN = manualBalance == null ? NaN : num(manualBalance);
   const currentBalance = manualBalance == null ? estimatedBalance : manualBalanceN;
@@ -231,7 +253,7 @@ export default function RefinanceScreen() {
 
   const savesLifetime = lifetimeSavings > 0;
   const worthIt = savesLifetime;
-  const currentPayoffMonths = curAm?.months ?? Math.round(yearsLeftN * 12);
+  const currentPayoffMonths = curAm?.months ?? remainingMonths;
   const newPayoffMonths = newAm?.months ?? Math.round(newTermN * 12);
 
   const closingEstimate = estimateClosingCosts(zipInfo, {
@@ -303,7 +325,8 @@ export default function RefinanceScreen() {
         balanceAdjusted: manualBalance != null,
         curRate,
         origYears,
-        curYears,
+        startMonth,
+        startYear,
         newRate,
         newTerm,
         costs,
@@ -363,29 +386,39 @@ export default function RefinanceScreen() {
                 />
               </View>
             </View>
+            <InputField
+              label="Loan Term"
+              value={origYears}
+              onChangeText={(value) => {
+                setOrigYears(value);
+                setManualBalance(null);
+              }}
+              suffix="yr"
+              accentColor={COLORS.pink}
+            />
             <View style={styles.rowInputs}>
               <View style={{ flex: 1 }}>
                 <InputField
-                  label="Original Term"
-                  value={origYears}
+                  label="Start Month"
+                  value={startMonth}
                   onChangeText={(value) => {
-                    setOrigYears(value);
+                    setStartMonth(value);
                     setManualBalance(null);
                   }}
-                  suffix="yr"
-                  accentColor={COLORS.pink}
+                  placeholder="1–12"
+                  accentColor={COLORS.teal}
                 />
               </View>
               <View style={{ width: 12 }} />
               <View style={{ flex: 1 }}>
                 <InputField
-                  label="Years Remaining"
-                  value={curYears}
+                  label="Start Year"
+                  value={startYear}
                   onChangeText={(value) => {
-                    setCurYears(value);
+                    setStartYear(value);
                     setManualBalance(null);
                   }}
-                  suffix="yr"
+                  placeholder="YYYY"
                   accentColor={COLORS.teal}
                 />
               </View>
